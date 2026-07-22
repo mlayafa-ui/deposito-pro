@@ -11,10 +11,10 @@ export const ROLE_LABELS = {
 }
 
 export const CONTAINER_SIZES = {
-  '20': { teu: 1, label: '20' STD' },
-  '40': { teu: 2, label: '40' STD' },
-  '40HC': { teu: 2, label: '40' HC' },
-  '45': { teu: 2.25, label: '45' HC' },
+  '20': { teu: 1, label: "20' STD" },
+  '40': { teu: 2, label: "40' STD" },
+  '40HC': { teu: 2, label: "40' HC" },
+  '45': { teu: 2.25, label: "45' HC" },
 }
 
 export const DEFAULT_TARIFAS = {
