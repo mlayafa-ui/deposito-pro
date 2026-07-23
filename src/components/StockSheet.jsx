@@ -45,14 +45,14 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
   }, [data, rows])
 
   const selectCell = (colKey, rowIdx) => {
-    if (columns.find(c => c.key === colKey)?.computed) return // No seleccionar celdas computadas
+    if (columns.find(c => c.key === colKey)?.computed) return
     setEditingCell(null)
     setSelectedCell({ col: colKey, row: rowIdx })
   }
 
   const startEdit = (colKey, rowIdx) => {
     if (!canEdit) return
-    if (columns.find(c => c.key === colKey)?.computed) return // No editar celdas computadas
+    if (columns.find(c => c.key === colKey)?.computed) return
     if (rowIdx === 0 && !isAdmin) return
     setSelectedCell({ col: colKey, row: rowIdx })
     setEditingCell({ col: colKey, row: rowIdx })
@@ -128,6 +128,93 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
     ? (selectedCell.row === 0 ? columns.find(c => c.key === selectedCell.col)?.label : `${selectedCell.col}_${selectedCell.row}`)
     : '-'
 
+  // ===== NUEVO: Helper para manejar navegación con teclado =====
+  const handleKeyDown = (e, colKey, rowIdx, colType) => {
+    if (e.key === 'Enter') {
+      finishEdit(colKey, rowIdx, e.target.value)
+      if (rowIdx < rows) {
+        selectCell(colKey, rowIdx + 1)
+      }
+      return
+    }
+    if (e.key === 'Escape') {
+      setEditingCell(null)
+      return
+    }
+    if (e.key === 'Tab') {
+      e.preventDefault()
+      finishEdit(colKey, rowIdx, e.target.value)
+      const nextIdx = columns.findIndex(c => c.key === colKey) + 1
+      if (nextIdx < columns.length) {
+        startEdit(columns[nextIdx].key, rowIdx)
+      }
+    }
+  }
+
+  // ===== NUEVO: Componente interno para inputs editables =====
+  const CellInput = ({ col, rowIdx, val }) => {
+    const colKey = col.key
+    const isTamanio = colKey === 'tamanio'
+    const isTerminal = colKey === 'terminal'
+
+    const commonProps = {
+      autoFocus: true,
+      defaultValue: val,
+      onBlur: (e) => finishEdit(colKey, rowIdx, e.target.value),
+      style: { width: '100%', height: '100%', border: 'none', outline: 'none', padding: '0 6px' }
+    }
+
+    if (isTamanio) {
+      return (
+        <select {...commonProps} onKeyDown={(e) => handleKeyDown(e, colKey, rowIdx, 'select')}>
+          <option value="">Seleccionar...</option>
+          {Object.entries(CONTAINER_SIZES).map(([k, v]) => (
+            <option key={k} value={k}>{v.label}</option>
+          ))}
+        </select>
+      )
+    }
+
+    if (isTerminal) {
+      return (
+        <select {...commonProps} onKeyDown={(e) => handleKeyDown(e, colKey, rowIdx, 'select')}>
+          <option value="">Seleccionar...</option>
+          {TERMINALES.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+      )
+    }
+
+    if (col.type === 'date') {
+      return (
+        <input
+          {...commonProps}
+          type="date"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') finishEdit(colKey, rowIdx, e.target.value)
+          }}
+        />
+      )
+    }
+
+    if (col.type === 'number') {
+      return (
+        <input
+          {...commonProps}
+          type="number"
+          onKeyDown={(e) => handleKeyDown(e, colKey, rowIdx, 'number')}
+        />
+      )
+    }
+
+    return (
+      <input
+        {...commonProps}
+        type="text"
+        onKeyDown={(e) => handleKeyDown(e, colKey, rowIdx, 'text')}
+      />
+    )
+  }
+
   return (
     <div className="spreadsheet-panel">
       <div className="toolbar">
@@ -192,8 +279,6 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
                     const isEditing = editingCell?.col === col.key && editingCell?.row === r
                     const val = computedData[key] || ''
                     const isComputed = col.computed
-                    const isTamanio = col.key === 'tamanio'
-                    const isTerminal = col.key === 'terminal'
 
                     return (
                       <td
@@ -203,37 +288,7 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
                         onDoubleClick={() => startEdit(col.key, r)}
                       >
                         {isEditing ? (
-                          isTamanio ? (
-                            <select
-                              autoFocus
-                              defaultValue={val}
-                              onBlur={e => finishEdit(col.key, r, e.target.value)}
-                              onKeyDown={e => e.key === 'Enter' && finishEdit(col.key, r, e.target.value)}
-                              style={{ width: '100%', height: '100%', border: 'none', outline: 'none', padding: '0 6px' }}
-                            >
-                              <option value="">Seleccionar...</option>
-                              {Object.entries(CONTAINER_SIZES).map(([k, v]) => (
-                                <option key={k} value={k}>{v.label}</option>
-                              ))}
-                            </select>
-                          ) : isTerminal ? (
-                            <select
-                              autoFocus
-                              defaultValue={val}
-                              onBlur={e => finishEdit(col.key, r, e.target.value)}
-                              onKeyDown={e => e.key === 'Enter' && finishEdit(col.key, r, e.target.value)}
-                              style={{ width: '100%', height: '100%', border: 'none', outline: 'none', padding: '0 6px' }}
-                            >
-                              <option value="">Seleccionar...</option>
-                              {TERMINALES.map(t => <option key={t} value={t}>{t}</option>)}
-                            </select>
-                          ) : col.type === 'date' ? (
-                            <input autoFocus type="date" defaultValue={val} onBlur={e => finishEdit(col.key, r, e.target.value)} onKeyDown={e => e.key === 'Enter' && finishEdit(col.key, r, e.target.value)} />
-                          ) : col.type === 'number' ? (
-                            <input autoFocus type="number" defaultValue={val} onBlur={e => finishEdit(col.key, r, e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { finishEdit(col.key, r, e.target.value); if (r < rows) selectCell(col.key, r + 1) } if (e.key === 'Escape') setEditingCell(null) if (e.key === 'Tab') { e.preventDefault(); finishEdit(col.key, r, e.target.value); const nextIdx = columns.findIndex(c => c.key === col.key) + 1; if (nextIdx < columns.length) startEdit(columns[nextIdx].key, r) } }} />
-                          ) : (
-                            <input autoFocus type="text" defaultValue={val} onBlur={e => finishEdit(col.key, r, e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { finishEdit(col.key, r, e.target.value); if (r < rows) selectCell(col.key, r + 1) } if (e.key === 'Escape') setEditingCell(null) if (e.key === 'Tab') { e.preventDefault(); finishEdit(col.key, r, e.target.value); const nextIdx = columns.findIndex(c => c.key === col.key) + 1; if (nextIdx < columns.length) startEdit(columns[nextIdx].key, r) } }} />
-                          )
+                          <CellInput col={col} rowIdx={r} val={val} />
                         ) : (
                           <span style={{ color: isComputed ? '#888' : '#1a1a1a', fontStyle: isComputed ? 'italic' : 'normal' }}>{val}</span>
                         )}
