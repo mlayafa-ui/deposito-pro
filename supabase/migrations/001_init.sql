@@ -14,6 +14,9 @@ CREATE TABLE IF NOT EXISTS app_users (
 );
 
 -- Tabla de columnas dinamicas
+-- Agregar columna computed si no existe (para actualizaciones)
+ALTER TABLE columns ADD COLUMN IF NOT EXISTS computed BOOLEAN DEFAULT FALSE;
+
 CREATE TABLE IF NOT EXISTS columns (
   key TEXT PRIMARY KEY,
   label TEXT NOT NULL,
@@ -81,11 +84,17 @@ ALTER TABLE clientes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tarifas_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow all app_users" ON app_users;
 CREATE POLICY "Allow all app_users" ON app_users FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all columns" ON columns;
 CREATE POLICY "Allow all columns" ON columns FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all cells" ON cells;
 CREATE POLICY "Allow all cells" ON cells FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all clientes" ON clientes;
 CREATE POLICY "Allow all clientes" ON clientes FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all tarifas" ON tarifas_config;
 CREATE POLICY "Allow all tarifas" ON tarifas_config FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all audit_log" ON audit_log;
 CREATE POLICY "Allow all audit_log" ON audit_log FOR ALL USING (true) WITH CHECK (true);
 
 -- ============================================
