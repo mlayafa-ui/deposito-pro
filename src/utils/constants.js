@@ -10,19 +10,17 @@ export const ROLE_LABELS = {
   [ROLES.VIEWER]: 'Visualizador'
 }
 
+// Tamanios: 20 o 40 (si es diferente, se aclara en obs)
 export const CONTAINER_SIZES = {
-  '20': { teu: 1, label: "20' STD" },
-  '40': { teu: 2, label: "40' STD" },
-  '40HC': { teu: 2, label: "40' HC" },
-  '45': { teu: 2.25, label: "45' HC" },
+  '20': { teu: 1, label: "20'" },
+  '40': { teu: 2, label: "40'" },
 }
 
+export const TERMINALES = ['TCP', 'Montecon']
+
 export const DEFAULT_TARIFAS = {
-  // Tarifas por TEU (almacenaje)
   almacenaje_teu_dia: 12.50,
   almacenaje_teu_mes: 350.00,
-
-  // Tarifas por contenedor (gastos fijos)
   in_contenedor: 45.00,
   out_contenedor: 45.00,
   transporte_contenedor: 120.00,
@@ -30,7 +28,7 @@ export const DEFAULT_TARIFAS = {
 }
 
 export const TARIFA_LABELS = {
-  almacenaje_teu_dia: 'Almacenaje TEU/día',
+  almacenaje_teu_dia: 'Almacenaje TEU/dia',
   almacenaje_teu_mes: 'Almacenaje TEU/mes',
   in_contenedor: 'In (por contenedor)',
   out_contenedor: 'Out (por contenedor)',
@@ -38,21 +36,20 @@ export const TARIFA_LABELS = {
   pbip_contenedor: 'PBIP (por contenedor)',
 }
 
-export const DEFAULT_CLIENTES = [
-  { id: 'cliente_a', nombre: 'Cliente A', tarifas: { ...DEFAULT_TARIFAS } },
-  { id: 'cliente_b', nombre: 'Cliente B', tarifas: { ...DEFAULT_TARIFAS } },
-  { id: 'cliente_c', nombre: 'Cliente C', tarifas: { ...DEFAULT_TARIFAS } },
-]
-
 export const STOCK_COLUMNS = [
   { key: 'contenedor', label: 'Contenedor', type: 'text' },
+  { key: 'stock', label: 'Stock', type: 'text' },
+  { key: 'ingreso', label: 'Ingreso', type: 'date' },
+  { key: 'salida', label: 'Salida', type: 'date' },
+  { key: 'tamanio', label: 'Tamanio', type: 'select' },
+  { key: 'dias', label: 'Dias', type: 'number', computed: true },
+  { key: 'estado', label: 'Estado', type: 'text', computed: true },
   { key: 'cliente', label: 'Cliente', type: 'text' },
-  { key: 'tamanio', label: 'Tamaño', type: 'select' },
-  { key: 'teu', label: 'TEU', type: 'number' },
-  { key: 'fecha_ingreso', label: 'Fecha Ingreso', type: 'date' },
-  { key: 'fecha_salida', label: 'Fecha Salida', type: 'date' },
-  { key: 'ubicacion', label: 'Ubicación', type: 'text' },
-  { key: 'estado', label: 'Estado', type: 'select' },
-  { key: 'mercancia', label: 'Mercancía', type: 'text' },
-  { key: 'observaciones', label: 'Observaciones', type: 'text' },
+  { key: 'ms', label: 'MS', type: 'text' },
+  { key: 'terminal', label: 'Terminal de retiro', type: 'select' },
+  { key: 'habilitacion', label: 'Habilitacion', type: 'text' },
+  { key: 'obs', label: 'Obs', type: 'text' },
+  { key: 'valor', label: 'Valor mercaderia', type: 'number' },
+  { key: 'factura', label: 'Factura', type: 'text' },
+  { key: 'fecha_factura', label: 'Fecha factura', type: 'date', computed: true },
 ]

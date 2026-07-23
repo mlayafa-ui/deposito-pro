@@ -1,8 +1,8 @@
 -- ============================================
--- Depósito Contenedores Pro - Esquema Completo
+-- Deposito Contenedores Pro - Esquema Completo
 -- ============================================
 
--- Tabla de usuarios de la aplicación
+-- Tabla de usuarios de la aplicacion
 CREATE TABLE IF NOT EXISTS app_users (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -13,19 +13,20 @@ CREATE TABLE IF NOT EXISTS app_users (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Tabla de columnas dinámicas (títulos de la hoja de stock)
+-- Tabla de columnas dinamicas
 CREATE TABLE IF NOT EXISTS columns (
   key TEXT PRIMARY KEY,
   label TEXT NOT NULL,
   type TEXT DEFAULT 'text' CHECK (type IN ('text', 'number', 'date', 'select')),
   position INTEGER NOT NULL,
   editable BOOLEAN DEFAULT TRUE,
+  computed BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Tabla de celdas (datos de la hoja de stock)
 CREATE TABLE IF NOT EXISTS cells (
-  cell_key TEXT PRIMARY KEY,           -- formato: "columnKey_rowIndex" ej: "contenedor_1"
+  cell_key TEXT PRIMARY KEY,
   value TEXT,
   updated_by TEXT,
   updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -47,7 +48,7 @@ CREATE TABLE IF NOT EXISTS tarifas_config (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Tabla de auditoría (registro de todos los cambios)
+-- Tabla de auditoria
 CREATE TABLE IF NOT EXISTS audit_log (
   id BIGSERIAL PRIMARY KEY,
   cell TEXT NOT NULL,
@@ -61,7 +62,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 
 -- ============================================
--- Índices para performance
+-- Indices
 -- ============================================
 CREATE INDEX IF NOT EXISTS idx_cells_key ON cells(cell_key);
 CREATE INDEX IF NOT EXISTS idx_cells_updated ON cells(updated_at);
@@ -71,7 +72,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_name);
 CREATE INDEX IF NOT EXISTS idx_columns_position ON columns(position);
 
 -- ============================================
--- Políticas RLS (Row Level Security)
+-- RLS
 -- ============================================
 ALTER TABLE app_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE columns ENABLE ROW LEVEL SECURITY;
@@ -80,7 +81,6 @@ ALTER TABLE clientes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tarifas_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
 
--- Políticas públicas para demo (en producción restringir por auth.uid())
 CREATE POLICY "Allow all app_users" ON app_users FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all columns" ON columns FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all cells" ON cells FOR ALL USING (true) WITH CHECK (true);
@@ -92,32 +92,35 @@ CREATE POLICY "Allow all audit_log" ON audit_log FOR ALL USING (true) WITH CHECK
 -- Datos iniciales
 -- ============================================
 
--- Usuarios de demo
 INSERT INTO app_users (id, name, email, role, color, initials) VALUES
   ('admin@deposito.com', 'Admin Principal', 'admin@deposito.com', 'admin', '#e74c3c', 'AP'),
-  ('ana@deposito.com', 'Ana García', 'ana@deposito.com', 'editor', '#3498db', 'AG'),
-  ('luis@deposito.com', 'Luis Martínez', 'luis@deposito.com', 'editor', '#2ecc71', 'LM'),
+  ('ana@deposito.com', 'Ana Garcia', 'ana@deposito.com', 'editor', '#3498db', 'AG'),
+  ('luis@deposito.com', 'Luis Martinez', 'luis@deposito.com', 'editor', '#2ecc71', 'LM'),
   ('carlos@deposito.com', 'Carlos Ruiz', 'carlos@deposito.com', 'viewer', '#9b59b6', 'CR'),
-  ('sofia@deposito.com', 'Sofía López', 'sofia@deposito.com', 'viewer', '#f39c12', 'SL')
+  ('sofia@deposito.com', 'Sofia Lopez', 'sofia@deposito.com', 'viewer', '#f39c12', 'SL')
 ON CONFLICT (id) DO NOTHING;
 
--- Columnas por defecto para stock de contenedores
-INSERT INTO columns (key, label, type, position, editable) VALUES
-  ('contenedor', 'Contenedor', 'text', 0, true),
-  ('cliente', 'Cliente', 'text', 1, true),
-  ('tamanio', 'Tamaño', 'select', 2, true),
-  ('teu', 'TEU', 'number', 3, true),
-  ('fecha_ingreso', 'Fecha Ingreso', 'date', 4, true),
-  ('fecha_salida', 'Fecha Salida', 'date', 5, true),
-  ('ubicacion', 'Ubicación', 'text', 6, true),
-  ('estado', 'Estado', 'select', 7, true),
-  ('mercancia', 'Mercancía', 'text', 8, true),
-  ('observaciones', 'Observaciones', 'text', 9, true)
+-- Columnas reales del deposito
+INSERT INTO columns (key, label, type, position, editable, computed) VALUES
+  ('contenedor', 'Contenedor', 'text', 0, true, false),
+  ('stock', 'Stock', 'text', 1, true, false),
+  ('ingreso', 'Ingreso', 'date', 2, true, false),
+  ('salida', 'Salida', 'date', 3, true, false),
+  ('tamanio', 'Tamanio', 'select', 4, true, false),
+  ('dias', 'Dias', 'number', 5, false, true),
+  ('estado', 'Estado', 'text', 6, false, true),
+  ('cliente', 'Cliente', 'text', 7, true, false),
+  ('ms', 'MS', 'text', 8, true, false),
+  ('terminal', 'Terminal de retiro', 'select', 9, true, false),
+  ('habilitacion', 'Habilitacion', 'text', 10, true, false),
+  ('obs', 'Obs', 'text', 11, true, false),
+  ('valor', 'Valor mercaderia', 'number', 12, true, false),
+  ('factura', 'Factura', 'text', 13, true, false),
+  ('fecha_factura', 'Fecha factura', 'date', 14, false, true)
 ON CONFLICT (key) DO NOTHING;
 
--- Tarifas globales por defecto
 INSERT INTO tarifas_config (key, value, label) VALUES
-  ('almacenaje_teu_dia', 12.50, 'Almacenaje TEU/día'),
+  ('almacenaje_teu_dia', 12.50, 'Almacenaje TEU/dia'),
   ('almacenaje_teu_mes', 350.00, 'Almacenaje TEU/mes'),
   ('in_contenedor', 45.00, 'In (por contenedor)'),
   ('out_contenedor', 45.00, 'Out (por contenedor)'),
@@ -125,103 +128,90 @@ INSERT INTO tarifas_config (key, value, label) VALUES
   ('pbip_contenedor', 25.00, 'PBIP (por contenedor)')
 ON CONFLICT (key) DO NOTHING;
 
--- Clientes de demo con tarifas personalizadas
 INSERT INTO clientes (id, nombre, tarifas) VALUES
   ('cliente_a', 'Cliente A', '{"almacenaje_teu_dia": 12.50, "almacenaje_teu_mes": 350.00, "in_contenedor": 45.00, "out_contenedor": 45.00, "transporte_contenedor": 120.00, "pbip_contenedor": 25.00}'),
   ('cliente_b', 'Cliente B', '{"almacenaje_teu_dia": 11.00, "almacenaje_teu_mes": 320.00, "in_contenedor": 40.00, "out_contenedor": 40.00, "transporte_contenedor": 110.00, "pbip_contenedor": 22.00}'),
   ('cliente_c', 'Cliente C', '{"almacenaje_teu_dia": 15.00, "almacenaje_teu_mes": 400.00, "in_contenedor": 50.00, "out_contenedor": 50.00, "transporte_contenedor": 130.00, "pbip_contenedor": 30.00}')
 ON CONFLICT (id) DO NOTHING;
 
--- Datos de demo - contenedores
+-- Datos de demo
 INSERT INTO cells (cell_key, value, updated_by) VALUES
   ('contenedor_1', 'MSCU1234567', 'system'),
-  ('cliente_1', 'Cliente A', 'system'),
+  ('stock_1', '001', 'system'),
+  ('ingreso_1', '2026-01-15', 'system'),
   ('tamanio_1', '40', 'system'),
-  ('teu_1', '2', 'system'),
-  ('fecha_ingreso_1', '2026-01-15', 'system'),
-  ('ubicacion_1', 'A-12', 'system'),
-  ('estado_1', 'Activo', 'system'),
-  ('mercancia_1', 'Electrónica', 'system'),
+  ('cliente_1', 'Cliente A', 'system'),
+  ('ms_1', 'MS-001', 'system'),
+  ('terminal_1', 'TCP', 'system'),
+  ('habilitacion_1', 'OK', 'system'),
+  ('obs_1', 'Electonica', 'system'),
+  ('valor_1', '50000', 'system'),
 
   ('contenedor_2', 'HLCU7654321', 'system'),
-  ('cliente_2', 'Cliente A', 'system'),
+  ('stock_2', '002', 'system'),
+  ('ingreso_2', '2026-02-20', 'system'),
+  ('salida_2', '2026-05-10', 'system'),
   ('tamanio_2', '20', 'system'),
-  ('teu_2', '1', 'system'),
-  ('fecha_ingreso_2', '2026-02-20', 'system'),
-  ('ubicacion_2', 'B-05', 'system'),
-  ('estado_2', 'Activo', 'system'),
-  ('mercancia_2', 'Textiles', 'system'),
+  ('cliente_2', 'Cliente A', 'system'),
+  ('ms_2', 'MS-002', 'system'),
+  ('terminal_2', 'Montecon', 'system'),
+  ('habilitacion_2', 'OK', 'system'),
+  ('obs_2', 'Textiles', 'system'),
+  ('valor_2', '25000', 'system'),
+  ('factura_2', 'F-001234', 'system'),
+  ('fecha_factura_2', '2026-05-10', 'system'),
 
   ('contenedor_3', 'TGHU9876543', 'system'),
+  ('stock_3', '003', 'system'),
+  ('ingreso_3', '2026-03-10', 'system'),
+  ('tamanio_3', '40', 'system'),
   ('cliente_3', 'Cliente B', 'system'),
-  ('tamanio_3', '40HC', 'system'),
-  ('teu_3', '2', 'system'),
-  ('fecha_ingreso_3', '2026-03-10', 'system'),
-  ('ubicacion_3', 'C-08', 'system'),
-  ('estado_3', 'Activo', 'system'),
-  ('mercancia_3', 'Automotriz', 'system'),
+  ('ms_3', 'MS-003', 'system'),
+  ('terminal_3', 'TCP', 'system'),
+  ('habilitacion_3', 'Pendiente', 'system'),
+  ('obs_3', 'Automotriz', 'system'),
+  ('valor_3', '75000', 'system'),
 
   ('contenedor_4', 'COSU4567890', 'system'),
-  ('cliente_4', 'Cliente B', 'system'),
+  ('stock_4', '004', 'system'),
+  ('ingreso_4', '2026-03-15', 'system'),
+  ('salida_4', '2026-05-20', 'system'),
   ('tamanio_4', '20', 'system'),
-  ('teu_4', '1', 'system'),
-  ('fecha_ingreso_4', '2026-03-15', 'system'),
-  ('fecha_salida_4', '2026-05-20', 'system'),
-  ('ubicacion_4', 'A-03', 'system'),
-  ('estado_4', 'Salido', 'system'),
-  ('mercancia_4', 'Químicos', 'system'),
+  ('cliente_4', 'Cliente B', 'system'),
+  ('ms_4', 'MS-004', 'system'),
+  ('terminal_4', 'Montecon', 'system'),
+  ('habilitacion_4', 'OK', 'system'),
+  ('obs_4', 'Quimicos', 'system'),
+  ('valor_4', '35000', 'system'),
+  ('factura_4', 'F-001235', 'system'),
+  ('fecha_factura_4', '2026-05-20', 'system'),
 
   ('contenedor_5', 'MAEU1112223', 'system'),
+  ('stock_5', '005', 'system'),
+  ('ingreso_5', '2026-04-01', 'system'),
+  ('tamanio_5', '40', 'system'),
   ('cliente_5', 'Cliente C', 'system'),
-  ('tamanio_5', '45', 'system'),
-  ('teu_5', '2.25', 'system'),
-  ('fecha_ingreso_5', '2026-04-01', 'system'),
-  ('ubicacion_5', 'D-01', 'system'),
-  ('estado_5', 'Activo', 'system'),
-  ('mercancia_5', 'Alimentos', 'system'),
+  ('ms_5', 'MS-005', 'system'),
+  ('terminal_5', 'TCP', 'system'),
+  ('habilitacion_5', 'OK', 'system'),
+  ('obs_5', 'Alimentos', 'system'),
+  ('valor_5', '42000', 'system'),
 
   ('contenedor_6', 'ONEU4445556', 'system'),
-  ('cliente_6', 'Cliente C', 'system'),
+  ('stock_6', '006', 'system'),
+  ('ingreso_6', '2026-04-10', 'system'),
   ('tamanio_6', '40', 'system'),
-  ('teu_6', '2', 'system'),
-  ('fecha_ingreso_6', '2026-04-10', 'system'),
-  ('ubicacion_6', 'B-12', 'system'),
-  ('estado_6', 'Activo', 'system'),
-  ('mercancia_6', 'Madera', 'system'),
-
-  ('contenedor_7', 'CMAU7778889', 'system'),
-  ('cliente_7', 'Cliente A', 'system'),
-  ('tamanio_7', '20', 'system'),
-  ('teu_7', '1', 'system'),
-  ('fecha_ingreso_7', '2026-05-05', 'system'),
-  ('ubicacion_7', 'C-15', 'system'),
-  ('estado_7', 'Activo', 'system'),
-  ('mercancia_7', 'Maquinaria', 'system'),
-
-  ('contenedor_8', 'EGLU0001112', 'system'),
-  ('cliente_8', 'Cliente B', 'system'),
-  ('tamanio_8', '40HC', 'system'),
-  ('teu_8', '2', 'system'),
-  ('fecha_ingreso_8', '2026-05-20', 'system'),
-  ('ubicacion_8', 'A-07', 'system'),
-  ('estado_8', 'Activo', 'system'),
-  ('mercancia_8', 'Plásticos', 'system')
+  ('cliente_6', 'Cliente C', 'system'),
+  ('ms_6', 'MS-006', 'system'),
+  ('terminal_6', 'Montecon', 'system'),
+  ('habilitacion_6', 'OK', 'system'),
+  ('obs_6', 'Madera', 'system'),
+  ('valor_6', '18000', 'system')
 ON CONFLICT (cell_key) DO NOTHING;
 
--- ============================================
--- Realtime: habilitar replicación
--- ============================================
--- Ejecutar en Supabase Dashboard > Database > Replication:
--- 1. Asegurar que supabase_realtime está activo
--- 2. Agregar tablas a la publicación 'supabase_realtime':
---    - cells
---    - audit_log
---    - columns
---    - clientes
---    - tarifas_config
-
+-- Realtime
 COMMENT ON TABLE cells IS 'Datos de la hoja de stock de contenedores';
-COMMENT ON TABLE audit_log IS 'Registro de auditoría de cambios';
-COMMENT ON TABLE columns IS 'Columnas dinámicas de la hoja de stock';
+COMMENT ON TABLE audit_log IS 'Registro de auditoria de cambios';
+COMMENT ON TABLE columns IS 'Columnas dinamicas de la hoja de stock';
 COMMENT ON TABLE clientes IS 'Clientes con tarifas personalizadas';
 COMMENT ON TABLE tarifas_config IS 'Tarifas globales por defecto';

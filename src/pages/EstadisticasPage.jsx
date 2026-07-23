@@ -1,11 +1,11 @@
 import React, { useState, useMemo } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  PieChart, Pie, Cell, AreaChart, Area, LineChart, Line
+  PieChart, Pie, Cell, AreaChart, Area
 } from 'recharts'
 import { CONTAINER_SIZES } from '../utils/constants.js'
 
-const COLORS = ['#3498db', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#34495e', '#ff6b6b', '#4ecdc4']
+const COLORS = ['#3498db', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#34495e']
 
 export default function EstadisticasPage({ data, columns, clientes }) {
   const [chartType, setChartType] = useState('teus_mes')
@@ -14,31 +14,27 @@ export default function EstadisticasPage({ data, columns, clientes }) {
   // Extraer contenedores
   const contenedores = useMemo(() => {
     const result = []
-    for (let r = 1; r <= 100; r++) {
+    for (let r = 1; r <= 200; r++) {
       const contenedor = data[`contenedor_${r}`]
       if (!contenedor) continue
-      const cliente = data[`cliente_${r}`]
+      const stock = data[`stock_${r}`]
       const tamanio = data[`tamanio_${r}`]
-      const teu = parseFloat(data[`teu_${r}`]) || (CONTAINER_SIZES[tamanio]?.teu || 1)
-      const fechaIngreso = data[`fecha_ingreso_${r}`]
-      const fechaSalida = data[`fecha_salida_${r}`]
+      const teu = CONTAINER_SIZES[tamanio]?.teu || 1
+      const ingreso = data[`ingreso_${r}`]
+      const salida = data[`salida_${r}`]
+      const cliente = data[`cliente_${r}`]
+      const valor = parseFloat(data[`valor_${r}`]) || 0
 
       result.push({
-        row: r,
-        contenedor,
-        cliente: cliente || 'Sin cliente',
-        tamanio: tamanio || '20',
-        teu,
-        fechaIngreso,
-        fechaSalida,
-        mesIngreso: fechaIngreso ? fechaIngreso.slice(0, 7) : null,
+        row: r, contenedor, stock, tamanio, teu, ingreso, salida, cliente, valor,
+        mesIngreso: ingreso ? ingreso.slice(0, 7) : null,
       })
     }
     return result
   }, [data])
 
   const clientesUnicos = useMemo(() => {
-    const set = new Set(contenedores.map(c => c.cliente))
+    const set = new Set(contenedores.map(c => c.cliente).filter(Boolean))
     return Array.from(set).sort()
   }, [contenedores])
 
@@ -51,31 +47,26 @@ export default function EstadisticasPage({ data, columns, clientes }) {
   const kpis = useMemo(() => {
     const totalTEUs = filtered.reduce((s, c) => s + c.teu, 0)
     const totalContenedores = filtered.length
-    const contActivos = filtered.filter(c => !c.fechaSalida).length
-    const contSalidos = filtered.filter(c => c.fechaSalida).length
-    const teusActivos = filtered.filter(c => !c.fechaSalida).reduce((s, c) => s + c.teu, 0)
+    const contActivos = filtered.filter(c => !c.salida).length
+    const contSalidos = filtered.filter(c => c.salida).length
+    const teusActivos = filtered.filter(c => !c.salida).reduce((s, c) => s + c.teu, 0)
+    const valorTotal = filtered.reduce((s, c) => s + c.valor, 0)
 
-    // Días promedio de almacenaje
-    let totalDias = 0
-    let contConDias = 0
+    let totalDias = 0, contConDias = 0
     filtered.forEach(c => {
-      if (c.fechaIngreso) {
-        const ing = new Date(c.fechaIngreso)
-        const sal = c.fechaSalida ? new Date(c.fechaSalida) : new Date()
-        const dias = Math.ceil((sal - ing) / (1000 * 60 * 60 * 24)) + 1
-        totalDias += dias
+      if (c.ingreso) {
+        const ing = new Date(c.ingreso)
+        const sal = c.salida ? new Date(c.salida) : new Date()
+        totalDias += Math.ceil((sal - ing) / (1000 * 60 * 60 * 24)) + 1
         contConDias++
       }
     })
     const diasPromedio = contConDias > 0 ? (totalDias / contConDias).toFixed(1) : 0
 
-    // Máximo TEUs simultáneos (simulado: conteos por mes)
-    const maxTEUs = totalTEUs // Simplificado
-
-    return { totalTEUs, totalContenedores, contActivos, contSalidos, teusActivos, diasPromedio, maxTEUs }
+    return { totalTEUs, totalContenedores, contActivos, contSalidos, teusActivos, diasPromedio, valorTotal }
   }, [filtered])
 
-  // Datos por mes (TEUs ingresados)
+  // Datos por mes
   const porMes = useMemo(() => {
     const map = {}
     filtered.forEach(c => {
@@ -91,39 +82,37 @@ export default function EstadisticasPage({ data, columns, clientes }) {
   const porCliente = useMemo(() => {
     const map = {}
     filtered.forEach(c => {
-      if (!map[c.cliente]) map[c.cliente] = { cliente: c.cliente, teus: 0, contenedores: 0 }
+      if (!map[c.cliente]) map[c.cliente] = { cliente: c.cliente, teus: 0, contenedores: 0, valor: 0 }
       map[c.cliente].teus += c.teu
       map[c.cliente].contenedores += 1
+      map[c.cliente].valor += c.valor
     })
     return Object.values(map).sort((a, b) => b.teus - a.teus)
   }, [filtered])
 
-  // Datos por tamaño
+  // Datos por tamanio
   const porTamanio = useMemo(() => {
     const map = {}
     filtered.forEach(c => {
-      const label = CONTAINER_SIZES[c.tamanio]?.label || c.tamanio
-      if (!map[label]) map[label] = { tamanio: label, teus: 0, contenedores: 0 }
-      map[label].teus += c.teu
-      map[label].contenedores += 1
+      if (!map[c.tamanio]) map[c.tamanio] = { tamanio: c.tamanio, teus: 0, contenedores: 0 }
+      map[c.tamanio].teus += c.teu
+      map[c.tamanio].contenedores += 1
     })
     return Object.values(map)
   }, [filtered])
 
-  // Evolución de stock (TEUs acumulados por mes)
+  // Evolucion
   const evolucion = useMemo(() => {
     const meses = [...new Set(contenedores.map(c => c.mesIngreso).filter(Boolean))].sort()
     return meses.map(mes => {
       const ingresados = contenedores.filter(c => c.mesIngreso === mes).reduce((s, c) => s + c.teu, 0)
-      const salidos = contenedores.filter(c => c.fechaSalida && c.fechaSalida.slice(0, 7) === mes).reduce((s, c) => s + c.teu, 0)
       const activos = contenedores.filter(c => {
-        if (!c.fechaIngreso) return false
-        const ing = c.fechaIngreso.slice(0, 7)
-        if (ing > mes) return false
-        if (c.fechaSalida && c.fechaSalida.slice(0, 7) <= mes) return false
+        if (!c.ingreso) return false
+        if (c.ingreso.slice(0, 7) > mes) return false
+        if (c.salida && c.salida.slice(0, 7) <= mes) return false
         return true
       }).reduce((s, c) => s + c.teu, 0)
-      return { mes, ingresados, salidos, activos }
+      return { mes, ingresados, activos }
     })
   }, [contenedores])
 
@@ -142,65 +131,39 @@ export default function EstadisticasPage({ data, columns, clientes }) {
   }
 
   const chartOptions = [
-    { key: 'teus_mes', label: '📅 TEUs por Mes', icon: '📅' },
-    { key: 'teus_cliente', label: '🏢 TEUs por Cliente', icon: '🏢' },
-    { key: 'cont_tamanio', label: '📦 Contenedores por Tamaño', icon: '📦' },
-    { key: 'evolucion', label: '📈 Evolución Stock', icon: '📈' },
-    { key: 'distribucion', label: '🥧 Distribución TEUs', icon: '🥧' },
+    { key: 'teus_mes', label: '📅 TEUs por Mes' },
+    { key: 'teus_cliente', label: '🏢 TEUs por Cliente' },
+    { key: 'cont_tamanio', label: '📦 Contenedores por Tamanio' },
+    { key: 'evolucion', label: '📈 Evolucion Stock' },
+    { key: 'distribucion', label: '🥧 Distribucion TEUs' },
   ]
 
   return (
     <div className="estadisticas-page">
       <div className="estadisticas-header">
-        <h2>📊 Estadísticas del Depósito</h2>
+        <h2>📊 Estadisticas del Deposito</h2>
         <select value={filterCliente} onChange={e => setFilterCliente(e.target.value)} className="filter-select" style={{ width: '220px' }}>
           <option value="">Todos los clientes</option>
           {clientesUnicos.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
       </div>
 
-      {/* KPIs */}
       <div className="kpi-grid">
-        <div className="kpi-card">
-          <div className="kpi-label">Total TEUs</div>
-          <div className="kpi-value">{kpis.totalTEUs.toLocaleString('es-ES')}</div>
-        </div>
-        <div className="kpi-card">
-          <div className="kpi-label">Contenedores</div>
-          <div className="kpi-value">{kpis.totalContenedores}</div>
-        </div>
-        <div className="kpi-card">
-          <div className="kpi-label">TEUs Activos</div>
-          <div className="kpi-value" style={{ color: '#27ae60' }}>{kpis.teusActivos.toLocaleString('es-ES')}</div>
-        </div>
-        <div className="kpi-card">
-          <div className="kpi-label">Cont. Activos</div>
-          <div className="kpi-value" style={{ color: '#3498db' }}>{kpis.contActivos}</div>
-        </div>
-        <div className="kpi-card">
-          <div className="kpi-label">Cont. Salidos</div>
-          <div className="kpi-value" style={{ color: '#e74c3c' }}>{kpis.contSalidos}</div>
-        </div>
-        <div className="kpi-card">
-          <div className="kpi-label">Días Promedio</div>
-          <div className="kpi-value">{kpis.diasPromedio}</div>
-        </div>
+        <div className="kpi-card"><div className="kpi-label">Total TEUs</div><div className="kpi-value">{kpis.totalTEUs.toLocaleString('es-ES')}</div></div>
+        <div className="kpi-card"><div className="kpi-label">Contenedores</div><div className="kpi-value">{kpis.totalContenedores}</div></div>
+        <div className="kpi-card"><div className="kpi-label">TEUs Activos</div><div className="kpi-value" style={{ color: '#27ae60' }}>{kpis.teusActivos.toLocaleString('es-ES')}</div></div>
+        <div className="kpi-card"><div className="kpi-label">Cont. Activos</div><div className="kpi-value" style={{ color: '#3498db' }}>{kpis.contActivos}</div></div>
+        <div className="kpi-card"><div className="kpi-label">Cont. Salidos</div><div className="kpi-value" style={{ color: '#e74c3c' }}>{kpis.contSalidos}</div></div>
+        <div className="kpi-card"><div className="kpi-label">Dias Promedio</div><div className="kpi-value">{kpis.diasPromedio}</div></div>
+        <div className="kpi-card"><div className="kpi-label">Valor Total</div><div className="kpi-value">${kpis.valorTotal.toLocaleString('es-ES')}</div></div>
       </div>
 
-      {/* Selector de gráficos */}
       <div className="chart-tabs">
         {chartOptions.map(opt => (
-          <button
-            key={opt.key}
-            className={`chart-tab ${chartType === opt.key ? 'active' : ''}`}
-            onClick={() => setChartType(opt.key)}
-          >
-            {opt.label}
-          </button>
+          <button key={opt.key} className={`chart-tab ${chartType === opt.key ? 'active' : ''}`} onClick={() => setChartType(opt.key)}>{opt.label}</button>
         ))}
       </div>
 
-      {/* Gráficos */}
       <div className="chart-container">
         {chartType === 'teus_mes' && (
           <>
@@ -237,7 +200,7 @@ export default function EstadisticasPage({ data, columns, clientes }) {
 
         {chartType === 'cont_tamanio' && (
           <>
-            <h3 style={{ marginBottom: '16px' }}>📦 Contenedores por Tamaño</h3>
+            <h3 style={{ marginBottom: '16px' }}>📦 Contenedores por Tamanio</h3>
             <ResponsiveContainer width="100%" height={400}>
               <BarChart data={porTamanio} margin={{ top: 10, right: 30, left: 0, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
@@ -254,7 +217,7 @@ export default function EstadisticasPage({ data, columns, clientes }) {
 
         {chartType === 'evolucion' && (
           <>
-            <h3 style={{ marginBottom: '16px' }}>📈 Evolución del Stock (TEUs Activos)</h3>
+            <h3 style={{ marginBottom: '16px' }}>📈 Evolucion del Stock (TEUs Activos)</h3>
             <ResponsiveContainer width="100%" height={400}>
               <AreaChart data={evolucion} margin={{ top: 10, right: 30, left: 0, bottom: 5 }}>
                 <defs>
@@ -282,18 +245,11 @@ export default function EstadisticasPage({ data, columns, clientes }) {
         {chartType === 'distribucion' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
             <div>
-              <h3 style={{ marginBottom: '16px' }}>🥧 Distribución TEUs por Cliente</h3>
+              <h3 style={{ marginBottom: '16px' }}>🥧 Distribucion TEUs por Cliente</h3>
               <ResponsiveContainer width="100%" height={350}>
                 <PieChart>
-                  <Pie
-                    data={porCliente}
-                    cx="50%" cy="50%"
-                    innerRadius={60} outerRadius={120}
-                    paddingAngle={3}
-                    dataKey="teus"
-                    nameKey="cliente"
-                    label={({ cliente, percent }) => `${cliente} ${(percent * 100).toFixed(0)}%`}
-                  >
+                  <Pie data={porCliente} cx="50%" cy="50%" innerRadius={60} outerRadius={120} paddingAngle={3} dataKey="teus" nameKey="cliente"
+                    label={({ cliente, percent }) => `${cliente} ${(percent * 100).toFixed(0)}%`}>
                     {porCliente.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                   </Pie>
                   <Tooltip content={<CustomTooltip />} />
@@ -301,18 +257,11 @@ export default function EstadisticasPage({ data, columns, clientes }) {
               </ResponsiveContainer>
             </div>
             <div>
-              <h3 style={{ marginBottom: '16px' }}>🥧 Distribución por Tamaño</h3>
+              <h3 style={{ marginBottom: '16px' }}>🥧 Distribucion por Tamanio</h3>
               <ResponsiveContainer width="100%" height={350}>
                 <PieChart>
-                  <Pie
-                    data={porTamanio}
-                    cx="50%" cy="50%"
-                    innerRadius={60} outerRadius={120}
-                    paddingAngle={3}
-                    dataKey="contenedores"
-                    nameKey="tamanio"
-                    label={({ tamanio, percent }) => `${tamanio} ${(percent * 100).toFixed(0)}%`}
-                  >
+                  <Pie data={porTamanio} cx="50%" cy="50%" innerRadius={60} outerRadius={120} paddingAngle={3} dataKey="contenedores" nameKey="tamanio"
+                    label={({ tamanio, percent }) => `${tamanio} ${(percent * 100).toFixed(0)}%`}>
                     {porTamanio.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                   </Pie>
                   <Tooltip content={<CustomTooltip />} />
@@ -326,7 +275,7 @@ export default function EstadisticasPage({ data, columns, clientes }) {
       {contenedores.length === 0 && (
         <div className="empty-state">
           <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
-          No hay contenedores cargados.<br/>Agrega contenedores en la pestaña "Stock" primero.
+          No hay contenedores cargados.<br/>Agrega contenedores en la pestana "Stock" primero.
         </div>
       )}
     </div>
