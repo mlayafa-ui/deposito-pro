@@ -4,7 +4,41 @@ import { CONTAINER_SIZES, TERMINALES } from '../utils/constants.js'
 
 const MAX_HISTORY = 50
 
-export default function StockSheet({ data, columns, currentUser, onSaveCell, onDeleteCell, onSaveColumn, onDeleteColumn, syncing }) {
+// ===== HELPERS DE FECHA =====
+function formatDate(isoDate) {
+  if (!isoDate) return ''
+  const [y, m, d] = isoDate.split('-')
+  if (!y || !m || !d) return isoDate
+  return `${d}-${m}-${y}`
+}
+
+function parseDate(displayDate) {
+  if (!displayDate) return ''
+  const [d, m, y] = displayDate.split('-')
+  if (!d || !m || !y) return displayDate
+  return `${y}-${m}-${d}`
+}
+
+function todayISO() {
+  return new Date().toISOString().split('T')[0]
+}
+
+// ===== ORDENAR COLUMNAS: salida después de ingreso =====
+function sortColumns(cols) {
+  const order = ['ingreso', 'salida']
+  return [...cols].sort((a, b) => {
+    const ia = order.indexOf(a.key)
+    const ib = order.indexOf(b.key)
+    if (ia !== -1 && ib !== -1) return ia - ib
+    if (ia !== -1) return -1
+    if (ib !== -1) return 1
+    return (a.position ?? 0) - (b.position ?? 0)
+  })
+}
+
+export default function StockSheet({ data, columns: rawColumns, currentUser, onSaveCell, onDeleteCell, onSaveColumn, onDeleteColumn, syncing }) {
+  const columns = useMemo(() => sortColumns(rawColumns), [rawColumns])
+
   const [selectedCell, setSelectedCell] = useState(null)
   const [editingCell, setEditingCell] = useState(null)
   const [clipboard, setClipboard] = useState('')
@@ -13,6 +47,10 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
   const [newCol, setNewCol] = useState({ name: '', type: 'text' })
   const [localOverrides, setLocalOverrides] = useState({})
   
+  // ===== FILTROS Y ORDENAMIENTO =====
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' })
+  const [filters, setFilters] = useState({})
+
   const historyRef = useRef([])
   const historyIndexRef = useRef(-1)
   const pendingSaves = useRef(new Set())
@@ -23,6 +61,7 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
 
   const getCellKey = (colKey, rowIdx) => `${colKey}_${rowIdx}`
 
+  // ===== COMPUTED DATA =====
   const computedData = useMemo(() => {
     const result = { ...data, ...localOverrides }
     for (let r = 1; r <= rows; r++) {
@@ -42,11 +81,39 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
       }
 
       if (factura && !result[`fecha_factura_${r}`] && !data[`fecha_factura_${r}`]) {
-        result[`fecha_factura_${r}`] = new Date().toISOString().split('T')[0]
+        result[`fecha_factura_${r}`] = todayISO()
       }
     }
     return result
   }, [data, rows, localOverrides])
+
+  // ===== FILTRAR Y ORDENAR FILAS =====
+  const visibleRows = useMemo(() => {
+    let rowIndices = Array.from({ length: rows }, (_, i) => i + 1)
+
+    // Aplicar filtros
+    for (const [colKey, filterVal] of Object.entries(filters)) {
+      if (!filterVal) continue
+      const lowerFilter = filterVal.toLowerCase()
+      rowIndices = rowIndices.filter(r => {
+        const val = (computedData[getCellKey(colKey, r)] || '').toLowerCase()
+        return val.includes(lowerFilter)
+      })
+    }
+
+    // Aplicar ordenamiento (solo si no es por stock, que es el default)
+    if (sortConfig.key) {
+      rowIndices.sort((a, b) => {
+        const valA = computedData[getCellKey(sortConfig.key, a)] || ''
+        const valB = computedData[getCellKey(sortConfig.key, b)] || ''
+        if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1
+        if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1
+        return a - b // fallback al número de stock
+      })
+    }
+
+    return rowIndices
+  }, [rows, filters, sortConfig, computedData])
 
   const getCellValue = useCallback((colKey, rowIdx) => {
     return computedData[getCellKey(colKey, rowIdx)] || ''
@@ -123,24 +190,28 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
     const cellKey = getCellKey(colKey, rowIdx)
     const oldVal = data[cellKey] || ''
     
-    if (value !== oldVal) {
-      pushHistory(cellKey, oldVal, value)
-      setLocalOverrides(prev => ({ ...prev, [cellKey]: value }))
+    // Convertir fecha de display a ISO si es necesario
+    const col = columns.find(c => c.key === colKey)
+    const finalValue = col?.type === 'date' ? parseDate(value) : value
+    
+    if (finalValue !== oldVal) {
+      pushHistory(cellKey, oldVal, finalValue)
+      setLocalOverrides(prev => ({ ...prev, [cellKey]: finalValue }))
       pendingSaves.current.add(cellKey)
       
       try {
-        await onSaveCell(cellKey, value, currentUser)
+        await onSaveCell(cellKey, finalValue, currentUser)
         
-        if (colKey === 'tamanio' && CONTAINER_SIZES[value]) {
+        if (colKey === 'tamanio' && CONTAINER_SIZES[finalValue]) {
           const teuKey = getCellKey('teu', rowIdx)
-          const teuValue = String(CONTAINER_SIZES[value].teu)
+          const teuValue = String(CONTAINER_SIZES[finalValue].teu)
           setLocalOverrides(prev => ({ ...prev, [teuKey]: teuValue }))
           await onSaveCell(teuKey, teuValue, currentUser)
         }
         
-        if (colKey === 'factura' && value && !data[`fecha_factura_${rowIdx}`]) {
+        if (colKey === 'factura' && finalValue && !data[`fecha_factura_${rowIdx}`]) {
           const fechaKey = getCellKey('fecha_factura', rowIdx)
-          const fechaValue = new Date().toISOString().split('T')[0]
+          const fechaValue = todayISO()
           setLocalOverrides(prev => ({ ...prev, [fechaKey]: fechaValue }))
           await onSaveCell(fechaKey, fechaValue, currentUser)
         }
@@ -156,7 +227,7 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
       }
     }
     setEditingCell(null)
-  }, [data, currentUser, onSaveCell, pushHistory])
+  }, [data, currentUser, onSaveCell, pushHistory, columns])
 
   const copyCell = useCallback(() => {
     if (!selectedCell) return
@@ -207,20 +278,9 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
     }
 
     if (editingCell) {
-      if (e.key === 'Enter') {
-        e.preventDefault()
-        // No hacemos nada acá, el input maneja su propio Enter
-        return
-      }
-      if (e.key === 'Tab') {
-        e.preventDefault()
-        // No hacemos nada acá, el input maneja su propio Tab
-        return
-      }
       if (e.key === 'Escape') {
         e.preventDefault()
         setEditingCell(null)
-        return
       }
       return
     }
@@ -261,6 +321,17 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
     }
   }, [editingCell, selectedCell, moveSelection, startEdit, isEditable, getCellValue, copyCell, cutCell, pasteCell, undo, redo])
 
+  // ===== FIX FOCO: devolver foco al grid cuando deja de editar =====
+  useEffect(() => {
+    if (!editingCell && gridRef.current) {
+      // Pequeño delay para que el DOM se actualice
+      const timer = setTimeout(() => {
+        gridRef.current.focus()
+      }, 10)
+      return () => clearTimeout(timer)
+    }
+  }, [editingCell])
+
   useEffect(() => {
     if (gridRef.current) gridRef.current.focus()
   }, [])
@@ -294,7 +365,7 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
     const blob = new Blob([csv], { type: 'text/csv' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = 'stock_contenedores_' + new Date().toISOString().split('T')[0] + '.csv'
+    a.download = 'stock_contenedores_' + todayISO() + '.csv'
     a.click()
   }, [columns, rows, getCellValue])
 
@@ -302,15 +373,26 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
     ? (selectedCell.row === 0 ? columns.find(c => c.key === selectedCell.col)?.label : `${selectedCell.col}_${selectedCell.row}`)
     : '-'
 
-  // ===== CELL INPUT CON ESTADO PROPIO =====
+  // ===== TOGGLE SORT =====
+  const toggleSort = (colKey) => {
+    setSortConfig(prev => {
+      if (prev.key === colKey) {
+        return { key: colKey, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
+      }
+      return { key: colKey, direction: 'asc' }
+    })
+  }
+
+  // ===== CELL INPUT =====
   function CellInput({ col, rowIdx, initialValue, onFinish, onNavigate }) {
-    const [value, setValue] = useState(initialValue)
+    const isDate = col.type === 'date'
+    const [value, setValue] = useState(isDate ? formatDate(initialValue) : initialValue)
     const inputRef = useRef(null)
 
     useEffect(() => {
       if (inputRef.current) {
         inputRef.current.focus()
-        inputRef.current.select()
+        if (inputRef.current.select) inputRef.current.select()
       }
     }, [])
 
@@ -325,19 +407,17 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
     const handleKeyDown = (e) => {
       if (e.key === 'Enter') {
         e.preventDefault()
+        e.stopPropagation()
         onFinish(value)
-        onNavigate('down')
+        setTimeout(() => onNavigate('down'), 0)
       } else if (e.key === 'Tab') {
         e.preventDefault()
+        e.stopPropagation()
         onFinish(value)
-        if (e.shiftKey) {
-          onNavigate('left')
-        } else {
-          onNavigate('right')
-        }
+        setTimeout(() => onNavigate(e.shiftKey ? 'left' : 'right'), 0)
       } else if (e.key === 'Escape') {
         e.preventDefault()
-        onFinish(null) // null = cancelar
+        onFinish(null)
       }
     }
 
@@ -363,8 +443,8 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
       )
     }
 
-    if (col.type === 'date') {
-      return <input ref={inputRef} type="date" value={value} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} style={commonStyle} />
+    if (isDate) {
+      return <input ref={inputRef} type="text" value={value} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} style={commonStyle} placeholder="dd-mm-aaaa" />
     }
 
     if (col.type === 'number') {
@@ -401,10 +481,28 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
                   {editingCell?.col === col.key && editingCell?.row === 0 && isAdmin ? (
                     <input autoFocus defaultValue={col.label} onBlur={e => { finishEdit(col.key, 0, e.target.value.trim()); onSaveColumn({ ...col, label: e.target.value.trim() }) }} onKeyDown={e => e.key === 'Enter' && finishEdit(col.key, 0, e.target.value.trim())} style={{ width: '100%', border: 'none', background: 'transparent', textAlign: 'center', fontWeight: 600 }} />
                   ) : (
-                    <span onDoubleClick={() => isAdmin && startEdit(col.key, 0)} style={{ cursor: isAdmin ? 'pointer' : 'default' }} title={isAdmin ? 'Doble clic para editar' : ''}>
-                      {col.label}
-                      {col.computed && <span style={{ fontSize: '9px', color: '#aaa', marginLeft: '4px' }}>⚡</span>}
-                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                      <span 
+                        onClick={() => !col.computed && toggleSort(col.key)}
+                        onDoubleClick={() => isAdmin && startEdit(col.key, 0)} 
+                        style={{ cursor: col.computed ? 'default' : 'pointer', fontWeight: sortConfig.key === col.key ? 700 : 600 }} 
+                        title={col.computed ? '' : 'Clic para ordenar'}
+                      >
+                        {col.label}
+                        {sortConfig.key === col.key && (sortConfig.direction === 'asc' ? ' ▲' : ' ▼')}
+                        {col.computed && <span style={{ fontSize: '9px', color: '#aaa', marginLeft: '4px' }}>⚡</span>}
+                      </span>
+                      {!col.computed && (
+                        <input
+                          type="text"
+                          placeholder="Filtrar..."
+                          value={filters[col.key] || ''}
+                          onChange={e => setFilters(prev => ({ ...prev, [col.key]: e.target.value }))}
+                          onClick={e => e.stopPropagation()}
+                          style={{ width: '90%', padding: '2px 4px', fontSize: '10px', border: '1px solid #ddd', borderRadius: '3px' }}
+                        />
+                      )}
+                    </div>
                   )}
                   {isAdmin && !col.computed && <span className="col-delete" onClick={() => onDeleteColumn(col.key)} title="Eliminar">×</span>}
                 </th>
@@ -413,53 +511,51 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
             </tr>
           </thead>
           <tbody>
-            {Array.from({ length: rows }, (_, ri) => {
-              const r = ri + 1
-              return (
-                <tr key={r}>
-                  <td style={{ textAlign: 'center', fontWeight: 600, color: '#888', userSelect: 'none' }}>
-                    {r}
-                    {canEdit && <span className="row-delete" onClick={() => deleteRow(r)} title="Eliminar fila">×</span>}
-                  </td>
-                  {columns.map(col => {
-                    const key = getCellKey(col.key, r)
-                    const isSelected = selectedCell?.col === col.key && selectedCell?.row === r
-                    const isEditing = editingCell?.col === col.key && editingCell?.row === r
-                    const val = getCellValue(col.key, r)
-                    const isComputed = col.computed
-                    const isPending = pendingSaves.current.has(key)
+            {visibleRows.map(r => (
+              <tr key={r}>
+                <td style={{ textAlign: 'center', fontWeight: 600, color: '#888', userSelect: 'none' }}>
+                  {r}
+                  {canEdit && <span className="row-delete" onClick={() => deleteRow(r)} title="Eliminar fila">×</span>}
+                </td>
+                {columns.map(col => {
+                  const key = getCellKey(col.key, r)
+                  const isSelected = selectedCell?.col === col.key && selectedCell?.row === r
+                  const isEditing = editingCell?.col === col.key && editingCell?.row === r
+                  const rawVal = getCellValue(col.key, r)
+                  const displayVal = col.type === 'date' ? formatDate(rawVal) : rawVal
+                  const isComputed = col.computed
+                  const isPending = pendingSaves.current.has(key)
 
-                    return (
-                      <td key={key} className={`${isSelected ? 'selected' : ''} ${isComputed ? 'computed-cell' : ''} ${isEditing ? 'editing' : ''} ${isPending ? 'pending-save' : ''}`} onClick={() => { setEditingCell(null); setSelectedCell({ col: col.key, row: r }) }}>
-                        {isEditing ? (
-                          <CellInput
-                            col={col}
-                            rowIdx={r}
-                            initialValue={editingCell.initialValue}
-                            onFinish={(value) => {
-                              if (value !== null) {
-                                finishEdit(col.key, r, value)
-                              } else {
-                                setEditingCell(null)
-                              }
-                            }}
-                            onNavigate={(direction) => {
-                              moveSelection(direction)
-                            }}
-                          />
-                        ) : (
-                          <span style={{ color: isComputed ? '#888' : '#1a1a1a', fontStyle: isComputed ? 'italic' : 'normal' }}>
-                            {val}
-                            {isPending && <span className="pending-indicator">⏳</span>}
-                          </span>
-                        )}
-                      </td>
-                    )
-                  })}
-                  {isAdmin && <td></td>}
-                </tr>
-              )
-            })}
+                  return (
+                    <td key={key} className={`${isSelected ? 'selected' : ''} ${isComputed ? 'computed-cell' : ''} ${isEditing ? 'editing' : ''} ${isPending ? 'pending-save' : ''}`} onClick={() => { setEditingCell(null); setSelectedCell({ col: col.key, row: r }) }}>
+                      {isEditing ? (
+                        <CellInput
+                          col={col}
+                          rowIdx={r}
+                          initialValue={rawVal}
+                          onFinish={(value) => {
+                            if (value !== null) {
+                              finishEdit(col.key, r, value)
+                            } else {
+                              setEditingCell(null)
+                            }
+                          }}
+                          onNavigate={(direction) => {
+                            moveSelection(direction)
+                          }}
+                        />
+                      ) : (
+                        <span style={{ color: isComputed ? '#888' : '#1a1a1a', fontStyle: isComputed ? 'italic' : 'normal' }}>
+                          {displayVal}
+                          {isPending && <span className="pending-indicator">⏳</span>}
+                        </span>
+                      )}
+                    </td>
+                  )
+                })}
+                {isAdmin && <td></td>}
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
