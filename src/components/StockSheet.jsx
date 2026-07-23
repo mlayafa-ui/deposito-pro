@@ -2,7 +2,6 @@ import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { PERMISSIONS } from '../utils/auth.js'
 import { CONTAINER_SIZES, TERMINALES } from '../utils/constants.js'
 
-// ===== HISTORIAL PARA DESHACER =====
 const MAX_HISTORY = 50
 
 export default function StockSheet({ data, columns, currentUser, onSaveCell, onDeleteCell, onSaveColumn, onDeleteColumn, syncing }) {
@@ -15,10 +14,8 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
   const [newCol, setNewCol] = useState({ name: '', type: 'text' })
   const [localOverrides, setLocalOverrides] = useState({})
   
-  // ===== HISTORIAL =====
   const historyRef = useRef([])
   const historyIndexRef = useRef(-1)
-
   const pendingSaves = useRef(new Set())
   const gridRef = useRef(null)
   const inputRef = useRef(null)
@@ -28,7 +25,6 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
 
   const getCellKey = (colKey, rowIdx) => `${colKey}_${rowIdx}`
 
-  // ===== COMPUTED DATA =====
   const computedData = useMemo(() => {
     const result = { ...data, ...localOverrides }
     for (let r = 1; r <= rows; r++) {
@@ -54,7 +50,6 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
     return result
   }, [data, rows, localOverrides])
 
-  // ===== HELPERS =====
   const getCellValue = useCallback((colKey, rowIdx) => {
     return computedData[getCellKey(colKey, rowIdx)] || ''
   }, [computedData])
@@ -66,14 +61,11 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
     return true
   }, [canEdit, columns, isAdmin])
 
-  // ===== HISTORIAL: GUARDAR ESTADO =====
   const pushHistory = useCallback((cellKey, oldValue, newValue) => {
     if (historyIndexRef.current < historyRef.current.length - 1) {
       historyRef.current = historyRef.current.slice(0, historyIndexRef.current + 1)
     }
-    
     historyRef.current.push({ cellKey, oldValue, newValue, timestamp: Date.now() })
-    
     if (historyRef.current.length > MAX_HISTORY) {
       historyRef.current.shift()
     } else {
@@ -81,24 +73,18 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
     }
   }, [])
 
-  // ===== HISTORIAL: DESHACER =====
   const undo = useCallback(async () => {
     if (historyIndexRef.current < 0) return
-    
     const action = historyRef.current[historyIndexRef.current]
     historyIndexRef.current--
-    
     setLocalOverrides(prev => ({ ...prev, [action.cellKey]: action.oldValue }))
     await onSaveCell(action.cellKey, action.oldValue, currentUser)
   }, [onSaveCell, currentUser])
 
-  // ===== HISTORIAL: REHACER =====
   const redo = useCallback(async () => {
     if (historyIndexRef.current >= historyRef.current.length - 1) return
-    
     historyIndexRef.current++
     const action = historyRef.current[historyIndexRef.current]
-    
     setLocalOverrides(prev => ({ ...prev, [action.cellKey]: action.newValue }))
     await onSaveCell(action.cellKey, action.newValue, currentUser)
   }, [onSaveCell, currentUser])
@@ -110,7 +96,6 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
     if (!selectedCell) return
     const colIdx = columns.findIndex(c => c.key === selectedCell.col)
     const rowIdx = selectedCell.row
-    
     let newColIdx = colIdx
     let newRowIdx = rowIdx
 
@@ -143,7 +128,6 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
     
     if (value !== oldVal) {
       pushHistory(cellKey, oldVal, value)
-      
       setLocalOverrides(prev => ({ ...prev, [cellKey]: value }))
       pendingSaves.current.add(cellKey)
       
@@ -178,7 +162,6 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
     setEditValue('')
   }, [data, currentUser, onSaveCell, pushHistory])
 
-  // ===== CLIPBOARD =====
   const copyCell = useCallback(() => {
     if (!selectedCell) return
     const val = getCellValue(selectedCell.col, selectedCell.row)
@@ -201,17 +184,12 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
     await onSaveCell(key, clipboard, currentUser)
   }, [selectedCell, clipboard, isEditable, onSaveCell, currentUser])
 
-  // ===== KEYBOARD HANDLER GLOBAL =====
   const handleGridKeyDown = useCallback((e) => {
     if (e.ctrlKey || e.metaKey) {
       switch (e.key.toLowerCase()) {
         case 'z':
           e.preventDefault()
-          if (e.shiftKey) {
-            redo()
-          } else {
-            undo()
-          }
+          if (e.shiftKey) { redo() } else { undo() }
           return
         case 'y':
           e.preventDefault()
@@ -242,11 +220,7 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
       if (e.key === 'Tab') {
         e.preventDefault()
         finishEdit(editingCell.col, editingCell.row, editValue)
-        if (e.shiftKey) {
-          moveSelection('left')
-        } else {
-          moveSelection('right')
-        }
+        if (e.shiftKey) { moveSelection('left') } else { moveSelection('right') }
         return
       }
       if (e.key === 'Escape') {
@@ -259,26 +233,13 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
     }
 
     if (!selectedCell) return
-
     const isLetterOrNumber = e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey
 
     switch (e.key) {
-      case 'ArrowUp':
-        e.preventDefault()
-        moveSelection('up')
-        break
-      case 'ArrowDown':
-        e.preventDefault()
-        moveSelection('down')
-        break
-      case 'ArrowLeft':
-        e.preventDefault()
-        moveSelection('left')
-        break
-      case 'ArrowRight':
-        e.preventDefault()
-        moveSelection('right')
-        break
+      case 'ArrowUp': e.preventDefault(); moveSelection('up'); break
+      case 'ArrowDown': e.preventDefault(); moveSelection('down'); break
+      case 'ArrowLeft': e.preventDefault(); moveSelection('left'); break
+      case 'ArrowRight': e.preventDefault(); moveSelection('right'); break
       case 'Enter':
         e.preventDefault()
         if (isEditable(selectedCell.col, selectedCell.row)) {
@@ -289,11 +250,7 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
         break
       case 'Tab':
         e.preventDefault()
-        if (e.shiftKey) {
-          moveSelection('left')
-        } else {
-          moveSelection('right')
-        }
+        if (e.shiftKey) { moveSelection('left') } else { moveSelection('right') }
         break
       case 'Delete':
       case 'Backspace':
@@ -311,25 +268,18 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
     }
   }, [editingCell, selectedCell, editValue, moveSelection, finishEdit, startEdit, isEditable, getCellValue, copyCell, cutCell, pasteCell, undo, redo])
 
-  // Focus en el grid cuando se monta
   useEffect(() => {
-    if (gridRef.current) {
-      gridRef.current.focus()
-    }
+    if (gridRef.current) gridRef.current.focus()
   }, [])
 
-  // Focus en input cuando empieza edición
   useEffect(() => {
     if (editingCell && inputRef.current) {
       inputRef.current.focus()
-      if (inputRef.current.select) {
-        inputRef.current.select()
-      }
+      if (inputRef.current.select) inputRef.current.select()
     }
   }, [editingCell])
 
   const addRow = useCallback(() => setRows(r => r + 1), [])
-
   const deleteRow = useCallback(async (rowIdx) => {
     if (!PERMISSIONS.canEditStock(currentUser?.role)) return
     for (const col of columns) {
@@ -366,33 +316,26 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
     ? (selectedCell.row === 0 ? columns.find(c => c.key === selectedCell.col)?.label : `${selectedCell.col}_${selectedCell.row}`)
     : '-'
 
-  // ===== RENDER CELL INPUT =====
-  const CellInput = useCallback(({ col, rowIdx }) => {
+  // ===== CELL INPUT - SIN useCallback, con defaultValue para inputs =====
+  function CellInput({ col, rowIdx }) {
     const colKey = col.key
     const isTamanio = colKey === 'tamanio'
     const isTerminal = colKey === 'terminal'
+    const initialValue = editValue || getCellValue(colKey, rowIdx)
 
-    const handleChange = (e) => {
-      setEditValue(e.target.value)
-    }
-
-    const handleBlur = () => {
-      finishEdit(colKey, rowIdx, editValue)
+    const handleBlur = (e) => {
+      finishEdit(colKey, rowIdx, e.target.value)
     }
 
     const handleKeyDown = (e) => {
       if (e.key === 'Enter') {
         e.preventDefault()
-        finishEdit(colKey, rowIdx, editValue)
+        finishEdit(colKey, rowIdx, e.target.value)
         moveSelection('down')
       } else if (e.key === 'Tab') {
         e.preventDefault()
-        finishEdit(colKey, rowIdx, editValue)
-        if (e.shiftKey) {
-          moveSelection('left')
-        } else {
-          moveSelection('right')
-        }
+        finishEdit(colKey, rowIdx, e.target.value)
+        if (e.shiftKey) { moveSelection('left') } else { moveSelection('right') }
       } else if (e.key === 'Escape') {
         e.preventDefault()
         setEditingCell(null)
@@ -404,14 +347,7 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
 
     if (isTamanio) {
       return (
-        <select
-          ref={inputRef}
-          value={editValue}
-          onChange={handleChange}
-          onBlur={handleBlur}
-          onKeyDown={handleKeyDown}
-          style={commonStyle}
-        >
+        <select ref={inputRef} defaultValue={initialValue} onBlur={handleBlur} onKeyDown={handleKeyDown} style={commonStyle} autoFocus>
           <option value="">Seleccionar...</option>
           {Object.entries(CONTAINER_SIZES).map(([k, v]) => (
             <option key={k} value={k}>{v.label}</option>
@@ -422,14 +358,7 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
 
     if (isTerminal) {
       return (
-        <select
-          ref={inputRef}
-          value={editValue}
-          onChange={handleChange}
-          onBlur={handleBlur}
-          onKeyDown={handleKeyDown}
-          style={commonStyle}
-        >
+        <select ref={inputRef} defaultValue={initialValue} onBlur={handleBlur} onKeyDown={handleKeyDown} style={commonStyle} autoFocus>
           <option value="">Seleccionar...</option>
           {TERMINALES.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
@@ -438,44 +367,20 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
 
     if (col.type === 'date') {
       return (
-        <input
-          ref={inputRef}
-          type="date"
-          value={editValue}
-          onChange={handleChange}
-          onBlur={handleBlur}
-          onKeyDown={handleKeyDown}
-          style={commonStyle}
-        />
+        <input ref={inputRef} type="date" defaultValue={initialValue} onBlur={handleBlur} onKeyDown={handleKeyDown} style={commonStyle} autoFocus />
       )
     }
 
     if (col.type === 'number') {
       return (
-        <input
-          ref={inputRef}
-          type="number"
-          value={editValue}
-          onChange={handleChange}
-          onBlur={handleBlur}
-          onKeyDown={handleKeyDown}
-          style={commonStyle}
-        />
+        <input ref={inputRef} type="number" defaultValue={initialValue} onBlur={handleBlur} onKeyDown={handleKeyDown} style={commonStyle} autoFocus />
       )
     }
 
     return (
-      <input
-        ref={inputRef}
-        type="text"
-        value={editValue}
-        onChange={handleChange}
-        onBlur={handleBlur}
-        onKeyDown={handleKeyDown}
-        style={commonStyle}
-      />
+      <input ref={inputRef} type="text" defaultValue={initialValue} onBlur={handleBlur} onKeyDown={handleKeyDown} style={commonStyle} autoFocus />
     )
-  }, [editValue, finishEdit, moveSelection])
+  }
 
   return (
     <div className="spreadsheet-panel">
@@ -491,20 +396,10 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
 
       <div className="formula-bar">
         <div className="cell-ref">{cellRef}</div>
-        <input 
-          className="formula-input" 
-          value={selectedCell ? getCellValue(selectedCell.col, selectedCell.row) : ''} 
-          readOnly 
-          placeholder="Valor de celda..." 
-        />
+        <input className="formula-input" value={selectedCell ? getCellValue(selectedCell.col, selectedCell.row) : ''} readOnly placeholder="Valor de celda..." />
       </div>
 
-      <div 
-        className="grid-container" 
-        ref={gridRef}
-        tabIndex={0}
-        onKeyDown={handleGridKeyDown}
-      >
+      <div className="grid-container" ref={gridRef} tabIndex={0} onKeyDown={handleGridKeyDown}>
         <table className="grid-table">
           <thead>
             <tr>
@@ -512,36 +407,17 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
               {columns.map(col => (
                 <th key={col.key} style={{ minWidth: col.computed ? '80px' : '140px' }}>
                   {editingCell?.col === col.key && editingCell?.row === 0 && isAdmin ? (
-                    <input
-                      autoFocus
-                      defaultValue={col.label}
-                      onBlur={e => {
-                        finishEdit(col.key, 0, e.target.value.trim())
-                        onSaveColumn({ ...col, label: e.target.value.trim() })
-                      }}
-                      onKeyDown={e => e.key === 'Enter' && finishEdit(col.key, 0, e.target.value.trim())}
-                      style={{ width: '100%', border: 'none', background: 'transparent', textAlign: 'center', fontWeight: 600 }}
-                    />
+                    <input autoFocus defaultValue={col.label} onBlur={e => { finishEdit(col.key, 0, e.target.value.trim()); onSaveColumn({ ...col, label: e.target.value.trim() }) }} onKeyDown={e => e.key === 'Enter' && finishEdit(col.key, 0, e.target.value.trim())} style={{ width: '100%', border: 'none', background: 'transparent', textAlign: 'center', fontWeight: 600 }} />
                   ) : (
-                    <span 
-                      onDoubleClick={() => isAdmin && startEdit(col.key, 0)} 
-                      style={{ cursor: isAdmin ? 'pointer' : 'default' }} 
-                      title={isAdmin ? 'Doble clic para editar' : ''}
-                    >
+                    <span onDoubleClick={() => isAdmin && startEdit(col.key, 0)} style={{ cursor: isAdmin ? 'pointer' : 'default' }} title={isAdmin ? 'Doble clic para editar' : ''}>
                       {col.label}
                       {col.computed && <span style={{ fontSize: '9px', color: '#aaa', marginLeft: '4px' }}>⚡</span>}
                     </span>
                   )}
-                  {isAdmin && !col.computed && (
-                    <span className="col-delete" onClick={() => onDeleteColumn(col.key)} title="Eliminar">×</span>
-                  )}
+                  {isAdmin && !col.computed && <span className="col-delete" onClick={() => onDeleteColumn(col.key)} title="Eliminar">×</span>}
                 </th>
               ))}
-              {isAdmin && (
-                <th style={{ minWidth: '50px', cursor: 'pointer' }} onClick={() => setShowAddCol(true)}>
-                  <span style={{ fontSize: '18px', color: '#999' }}>+</span>
-                </th>
-              )}
+              {isAdmin && <th style={{ minWidth: '50px', cursor: 'pointer' }} onClick={() => setShowAddCol(true)}><span style={{ fontSize: '18px', color: '#999' }}>+</span></th>}
             </tr>
           </thead>
           <tbody>
@@ -551,9 +427,7 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
                 <tr key={r}>
                   <td style={{ textAlign: 'center', fontWeight: 600, color: '#888', userSelect: 'none' }}>
                     {r}
-                    {canEdit && (
-                      <span className="row-delete" onClick={() => deleteRow(r)} title="Eliminar fila">×</span>
-                    )}
+                    {canEdit && <span className="row-delete" onClick={() => deleteRow(r)} title="Eliminar fila">×</span>}
                   </td>
                   {columns.map(col => {
                     const key = getCellKey(col.key, r)
@@ -564,21 +438,11 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
                     const isPending = pendingSaves.current.has(key)
 
                     return (
-                      <td
-                        key={key}
-                        className={`${isSelected ? 'selected' : ''} ${isComputed ? 'computed-cell' : ''} ${isEditing ? 'editing' : ''} ${isPending ? 'pending-save' : ''}`}
-                        onClick={() => {
-                          setEditingCell(null)
-                          setSelectedCell({ col: col.key, row: r })
-                        }}
-                      >
+                      <td key={key} className={`${isSelected ? 'selected' : ''} ${isComputed ? 'computed-cell' : ''} ${isEditing ? 'editing' : ''} ${isPending ? 'pending-save' : ''}`} onClick={() => { setEditingCell(null); setSelectedCell({ col: col.key, row: r }) }}>
                         {isEditing ? (
                           <CellInput col={col} rowIdx={r} />
                         ) : (
-                          <span style={{ 
-                            color: isComputed ? '#888' : '#1a1a1a', 
-                            fontStyle: isComputed ? 'italic' : 'normal'
-                          }}>
+                          <span style={{ color: isComputed ? '#888' : '#1a1a1a', fontStyle: isComputed ? 'italic' : 'normal' }}>
                             {val}
                             {isPending && <span className="pending-indicator">⏳</span>}
                           </span>
@@ -598,18 +462,8 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
         <div className="modal-overlay" onClick={() => setShowAddCol(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <h3>Agregar columna</h3>
-            <input 
-              placeholder="Nombre" 
-              value={newCol.name} 
-              onChange={e => setNewCol({ ...newCol, name: e.target.value })} 
-              className="modal-input" 
-              autoFocus 
-            />
-            <select 
-              value={newCol.type} 
-              onChange={e => setNewCol({ ...newCol, type: e.target.value })} 
-              className="modal-select"
-            >
+            <input placeholder="Nombre" value={newCol.name} onChange={e => setNewCol({ ...newCol, name: e.target.value })} className="modal-input" autoFocus />
+            <select value={newCol.type} onChange={e => setNewCol({ ...newCol, type: e.target.value })} className="modal-select">
               <option value="text">Texto</option>
               <option value="number">Numero</option>
               <option value="date">Fecha</option>
