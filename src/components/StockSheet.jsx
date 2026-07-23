@@ -7,7 +7,6 @@ const MAX_HISTORY = 50
 export default function StockSheet({ data, columns, currentUser, onSaveCell, onDeleteCell, onSaveColumn, onDeleteColumn, syncing }) {
   const [selectedCell, setSelectedCell] = useState(null)
   const [editingCell, setEditingCell] = useState(null)
-  const [editValue, setEditValue] = useState('')
   const [clipboard, setClipboard] = useState('')
   const [rows, setRows] = useState(50)
   const [showAddCol, setShowAddCol] = useState(false)
@@ -18,7 +17,6 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
   const historyIndexRef = useRef(-1)
   const pendingSaves = useRef(new Set())
   const gridRef = useRef(null)
-  const inputRef = useRef(null)
 
   const isAdmin = currentUser?.role === 'admin'
   const canEdit = PERMISSIONS.canEditStock(currentUser?.role)
@@ -118,8 +116,7 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
   const startEdit = useCallback((colKey, rowIdx, initialValue = '') => {
     if (!isEditable(colKey, rowIdx)) return
     setSelectedCell({ col: colKey, row: rowIdx })
-    setEditingCell({ col: colKey, row: rowIdx })
-    setEditValue(initialValue)
+    setEditingCell({ col: colKey, row: rowIdx, initialValue })
   }, [isEditable])
 
   const finishEdit = useCallback(async (colKey, rowIdx, value) => {
@@ -159,7 +156,6 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
       }
     }
     setEditingCell(null)
-    setEditValue('')
   }, [data, currentUser, onSaveCell, pushHistory])
 
   const copyCell = useCallback(() => {
@@ -213,20 +209,17 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
     if (editingCell) {
       if (e.key === 'Enter') {
         e.preventDefault()
-        finishEdit(editingCell.col, editingCell.row, editValue)
-        moveSelection('down')
+        // No hacemos nada acá, el input maneja su propio Enter
         return
       }
       if (e.key === 'Tab') {
         e.preventDefault()
-        finishEdit(editingCell.col, editingCell.row, editValue)
-        if (e.shiftKey) { moveSelection('left') } else { moveSelection('right') }
+        // No hacemos nada acá, el input maneja su propio Tab
         return
       }
       if (e.key === 'Escape') {
         e.preventDefault()
         setEditingCell(null)
-        setEditValue('')
         return
       }
       return
@@ -266,18 +259,11 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
         }
         break
     }
-  }, [editingCell, selectedCell, editValue, moveSelection, finishEdit, startEdit, isEditable, getCellValue, copyCell, cutCell, pasteCell, undo, redo])
+  }, [editingCell, selectedCell, moveSelection, startEdit, isEditable, getCellValue, copyCell, cutCell, pasteCell, undo, redo])
 
   useEffect(() => {
     if (gridRef.current) gridRef.current.focus()
   }, [])
-
-  useEffect(() => {
-    if (editingCell && inputRef.current) {
-      inputRef.current.focus()
-      if (inputRef.current.select) inputRef.current.select()
-    }
-  }, [editingCell])
 
   const addRow = useCallback(() => setRows(r => r + 1), [])
   const deleteRow = useCallback(async (rowIdx) => {
@@ -316,38 +302,50 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
     ? (selectedCell.row === 0 ? columns.find(c => c.key === selectedCell.col)?.label : `${selectedCell.col}_${selectedCell.row}`)
     : '-'
 
-  // ===== CELL INPUT - SIN useCallback, con defaultValue para inputs =====
-  function CellInput({ col, rowIdx }) {
-    const colKey = col.key
-    const isTamanio = colKey === 'tamanio'
-    const isTerminal = colKey === 'terminal'
-    const initialValue = editValue || getCellValue(colKey, rowIdx)
+  // ===== CELL INPUT CON ESTADO PROPIO =====
+  function CellInput({ col, rowIdx, initialValue, onFinish, onNavigate }) {
+    const [value, setValue] = useState(initialValue)
+    const inputRef = useRef(null)
 
-    const handleBlur = (e) => {
-      finishEdit(colKey, rowIdx, e.target.value)
+    useEffect(() => {
+      if (inputRef.current) {
+        inputRef.current.focus()
+        inputRef.current.select()
+      }
+    }, [])
+
+    const handleChange = (e) => {
+      setValue(e.target.value)
+    }
+
+    const handleBlur = () => {
+      onFinish(value)
     }
 
     const handleKeyDown = (e) => {
       if (e.key === 'Enter') {
         e.preventDefault()
-        finishEdit(colKey, rowIdx, e.target.value)
-        moveSelection('down')
+        onFinish(value)
+        onNavigate('down')
       } else if (e.key === 'Tab') {
         e.preventDefault()
-        finishEdit(colKey, rowIdx, e.target.value)
-        if (e.shiftKey) { moveSelection('left') } else { moveSelection('right') }
+        onFinish(value)
+        if (e.shiftKey) {
+          onNavigate('left')
+        } else {
+          onNavigate('right')
+        }
       } else if (e.key === 'Escape') {
         e.preventDefault()
-        setEditingCell(null)
-        setEditValue('')
+        onFinish(null) // null = cancelar
       }
     }
 
     const commonStyle = { width: '100%', height: '100%', border: 'none', outline: 'none', padding: '0 6px', fontSize: '13px' }
 
-    if (isTamanio) {
+    if (col.key === 'tamanio') {
       return (
-        <select ref={inputRef} defaultValue={initialValue} onBlur={handleBlur} onKeyDown={handleKeyDown} style={commonStyle} autoFocus>
+        <select ref={inputRef} value={value} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} style={commonStyle}>
           <option value="">Seleccionar...</option>
           {Object.entries(CONTAINER_SIZES).map(([k, v]) => (
             <option key={k} value={k}>{v.label}</option>
@@ -356,9 +354,9 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
       )
     }
 
-    if (isTerminal) {
+    if (col.key === 'terminal') {
       return (
-        <select ref={inputRef} defaultValue={initialValue} onBlur={handleBlur} onKeyDown={handleKeyDown} style={commonStyle} autoFocus>
+        <select ref={inputRef} value={value} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} style={commonStyle}>
           <option value="">Seleccionar...</option>
           {TERMINALES.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
@@ -366,20 +364,14 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
     }
 
     if (col.type === 'date') {
-      return (
-        <input ref={inputRef} type="date" defaultValue={initialValue} onBlur={handleBlur} onKeyDown={handleKeyDown} style={commonStyle} autoFocus />
-      )
+      return <input ref={inputRef} type="date" value={value} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} style={commonStyle} />
     }
 
     if (col.type === 'number') {
-      return (
-        <input ref={inputRef} type="number" defaultValue={initialValue} onBlur={handleBlur} onKeyDown={handleKeyDown} style={commonStyle} autoFocus />
-      )
+      return <input ref={inputRef} type="number" value={value} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} style={commonStyle} />
     }
 
-    return (
-      <input ref={inputRef} type="text" defaultValue={initialValue} onBlur={handleBlur} onKeyDown={handleKeyDown} style={commonStyle} autoFocus />
-    )
+    return <input ref={inputRef} type="text" value={value} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} style={commonStyle} />
   }
 
   return (
@@ -440,7 +432,21 @@ export default function StockSheet({ data, columns, currentUser, onSaveCell, onD
                     return (
                       <td key={key} className={`${isSelected ? 'selected' : ''} ${isComputed ? 'computed-cell' : ''} ${isEditing ? 'editing' : ''} ${isPending ? 'pending-save' : ''}`} onClick={() => { setEditingCell(null); setSelectedCell({ col: col.key, row: r }) }}>
                         {isEditing ? (
-                          <CellInput col={col} rowIdx={r} />
+                          <CellInput
+                            col={col}
+                            rowIdx={r}
+                            initialValue={editingCell.initialValue}
+                            onFinish={(value) => {
+                              if (value !== null) {
+                                finishEdit(col.key, r, value)
+                              } else {
+                                setEditingCell(null)
+                              }
+                            }}
+                            onNavigate={(direction) => {
+                              moveSelection(direction)
+                            }}
+                          />
                         ) : (
                           <span style={{ color: isComputed ? '#888' : '#1a1a1a', fontStyle: isComputed ? 'italic' : 'normal' }}>
                             {val}
