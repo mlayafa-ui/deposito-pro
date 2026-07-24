@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { PERMISSIONS } from '../utils/auth.js'
-import { CONTAINER_SIZES, TERMINALES } from '../utils/constants.js'
+import { TERMINALES } from '../utils/constants.js'
 
 const MAX_HISTORY = 50
 
@@ -23,31 +23,58 @@ function todayISO() {
   return new Date().toISOString().split('T')[0]
 }
 
-// ===== ORDENAR COLUMNAS: salida después de ingreso =====
-function sortColumns(cols) {
-  const order = ['ingreso', 'salida']
-  return [...cols].sort((a, b) => {
-    const ia = order.indexOf(a.key)
-    const ib = order.indexOf(b.key)
-    if (ia !== -1 && ib !== -1) return ia - ib
-    if (ia !== -1) return -1
-    if (ib !== -1) return 1
-    return (a.position ?? 0) - (b.position ?? 0)
-  })
-}
+// ===== ORDEN FIJO DE COLUMNAS =====
+const COLUMN_ORDER = [
+  'contenedor',
+  'stock',
+  'ingreso',
+  'salida',
+  'teu',
+  'dias',
+  'ubicacion',
+  'estado',
+  'ms',
+  'observaciones',
+  'terminal',
+  'habilitacion',
+  'valor_mercaderia',
+  'factura',
+  'fecha_factura',
+]
+
+// ===== CONFIGURACIÓN DE COLUMNAS =====
+const DEFAULT_COLUMNS_CONFIG = [
+  { key: 'contenedor', label: 'Contenedor', type: 'text', editable: true },
+  { key: 'stock', label: 'Stock', type: 'number', editable: true },
+  { key: 'ingreso', label: 'Fecha In', type: 'date', editable: true },
+  { key: 'salida', label: 'Fecha Out', type: 'date', editable: true },
+  { key: 'teu', label: 'TEU', type: 'number', editable: true },
+  { key: 'dias', label: 'Días', type: 'text', computed: true, editable: false },
+  { key: 'ubicacion', label: 'Ubicación', type: 'text', editable: true },
+  { key: 'estado', label: 'Estado', type: 'text', computed: true, editable: false },
+  { key: 'ms', label: 'MS', type: 'text', editable: true },
+  { key: 'observaciones', label: 'Observaciones', type: 'text', editable: true },
+  { key: 'terminal', label: 'Terminal', type: 'text', editable: true },
+  { key: 'habilitacion', label: 'Habilitación', type: 'text', editable: true },
+  { key: 'valor_mercaderia', label: 'Valor Mercadería', type: 'number', editable: true },
+  { key: 'factura', label: 'Factura', type: 'number', editable: true },
+  { key: 'fecha_factura', label: 'Fecha Factura', type: 'date', computed: true, editable: false },
+]
 
 export default function StockSheet({ data, columns: rawColumns, currentUser, onSaveCell, onDeleteCell, onSaveColumn, onDeleteColumn, syncing }) {
-  const columns = useMemo(() => sortColumns(rawColumns), [rawColumns])
+  const columns = useMemo(() => {
+    const colMap = new Map((rawColumns || DEFAULT_COLUMNS_CONFIG).map(c => [c.key, c]))
+    return COLUMN_ORDER.map(key => colMap.get(key)).filter(Boolean)
+  }, [rawColumns])
 
   const [selectedCell, setSelectedCell] = useState(null)
   const [editingCell, setEditingCell] = useState(null)
   const [clipboard, setClipboard] = useState('')
-  const [rows, setRows] = useState(50)
+  const [rows, setRows] = useState(10000)
   const [showAddCol, setShowAddCol] = useState(false)
   const [newCol, setNewCol] = useState({ name: '', type: 'text' })
   const [localOverrides, setLocalOverrides] = useState({})
   
-  // ===== FILTROS Y ORDENAMIENTO =====
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' })
   const [filters, setFilters] = useState({})
 
@@ -77,7 +104,7 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
       }
 
       if (ingreso) {
-        result[`estado_${r}`] = salida ? 'Salido' : 'En deposito'
+        result[`estado_${r}`] = salida ? 'Salido' : 'En depósito'
       }
 
       if (factura && !result[`fecha_factura_${r}`] && !data[`fecha_factura_${r}`]) {
@@ -91,7 +118,6 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
   const visibleRows = useMemo(() => {
     let rowIndices = Array.from({ length: rows }, (_, i) => i + 1)
 
-    // Aplicar filtros
     for (const [colKey, filterVal] of Object.entries(filters)) {
       if (!filterVal) continue
       const lowerFilter = filterVal.toLowerCase()
@@ -101,19 +127,30 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
       })
     }
 
-    // Aplicar ordenamiento (solo si no es por stock, que es el default)
+    const withData = []
+    const empty = []
+    
+    for (const r of rowIndices) {
+      const hasData = columns.some(col => {
+        const val = computedData[getCellKey(col.key, r)]
+        return val && String(val).trim() !== ''
+      })
+      if (hasData) withData.push(r)
+      else empty.push(r)
+    }
+
     if (sortConfig.key) {
-      rowIndices.sort((a, b) => {
+      withData.sort((a, b) => {
         const valA = computedData[getCellKey(sortConfig.key, a)] || ''
         const valB = computedData[getCellKey(sortConfig.key, b)] || ''
         if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1
         if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1
-        return a - b // fallback al número de stock
+        return a - b
       })
     }
 
-    return rowIndices
-  }, [rows, filters, sortConfig, computedData])
+    return [...withData, ...empty]
+  }, [rows, filters, sortConfig, computedData, columns])
 
   const getCellValue = useCallback((colKey, rowIdx) => {
     return computedData[getCellKey(colKey, rowIdx)] || ''
@@ -190,7 +227,6 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
     const cellKey = getCellKey(colKey, rowIdx)
     const oldVal = data[cellKey] || ''
     
-    // Convertir fecha de display a ISO si es necesario
     const col = columns.find(c => c.key === colKey)
     const finalValue = col?.type === 'date' ? parseDate(value) : value
     
@@ -201,13 +237,6 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
       
       try {
         await onSaveCell(cellKey, finalValue, currentUser)
-        
-        if (colKey === 'tamanio' && CONTAINER_SIZES[finalValue]) {
-          const teuKey = getCellKey('teu', rowIdx)
-          const teuValue = String(CONTAINER_SIZES[finalValue].teu)
-          setLocalOverrides(prev => ({ ...prev, [teuKey]: teuValue }))
-          await onSaveCell(teuKey, teuValue, currentUser)
-        }
         
         if (colKey === 'factura' && finalValue && !data[`fecha_factura_${rowIdx}`]) {
           const fechaKey = getCellKey('fecha_factura', rowIdx)
@@ -321,10 +350,8 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
     }
   }, [editingCell, selectedCell, moveSelection, startEdit, isEditable, getCellValue, copyCell, cutCell, pasteCell, undo, redo])
 
-  // ===== FIX FOCO: devolver foco al grid cuando deja de editar =====
   useEffect(() => {
     if (!editingCell && gridRef.current) {
-      // Pequeño delay para que el DOM se actualice
       const timer = setTimeout(() => {
         gridRef.current.focus()
       }, 10)
@@ -336,7 +363,7 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
     if (gridRef.current) gridRef.current.focus()
   }, [])
 
-  const addRow = useCallback(() => setRows(r => r + 1), [])
+  const addRow = useCallback(() => setRows(r => Math.max(r + 1, 10000)), [])
   const deleteRow = useCallback(async (rowIdx) => {
     if (!PERMISSIONS.canEditStock(currentUser?.role)) return
     for (const col of columns) {
@@ -373,7 +400,6 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
     ? (selectedCell.row === 0 ? columns.find(c => c.key === selectedCell.col)?.label : `${selectedCell.col}_${selectedCell.row}`)
     : '-'
 
-  // ===== TOGGLE SORT =====
   const toggleSort = (colKey) => {
     setSortConfig(prev => {
       if (prev.key === colKey) {
@@ -423,17 +449,6 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
 
     const commonStyle = { width: '100%', height: '100%', border: 'none', outline: 'none', padding: '0 6px', fontSize: '13px' }
 
-    if (col.key === 'tamanio') {
-      return (
-        <select ref={inputRef} value={value} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} style={commonStyle}>
-          <option value="">Seleccionar...</option>
-          {Object.entries(CONTAINER_SIZES).map(([k, v]) => (
-            <option key={k} value={k}>{v.label}</option>
-          ))}
-        </select>
-      )
-    }
-
     if (col.key === 'terminal') {
       return (
         <select ref={inputRef} value={value} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} style={commonStyle}>
@@ -461,7 +476,6 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
         <button className="tool-btn" onClick={pasteCell}>📥 Pegar</button>
         <button className="tool-btn" onClick={undo} disabled={!canUndo} title="Deshacer (Ctrl+Z)">↩️ Deshacer</button>
         <button className="tool-btn" onClick={redo} disabled={!canRedo} title="Rehacer (Ctrl+Y)">↪️ Rehacer</button>
-        {canEdit && <button className="tool-btn" onClick={addRow}>➕ Fila</button>}
         <button className="tool-btn primary" onClick={exportCSV}>⬇️ Exportar CSV</button>
         {syncing && <div className="sync-indicator"><div className="sync-dot"/><span>Sincronizando...</span></div>}
       </div>
