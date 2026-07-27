@@ -23,7 +23,7 @@ function todayISO() {
   return new Date().toISOString().split('T')[0]
 }
 
-// ===== ORDEN FIJO DE COLUMNAS =====
+// ===== ORDEN FIJO DE COLUMNAS (debe coincidir EXACTO con STOCK_COLUMNS) =====
 const COLUMN_ORDER = [
   'contenedor',
   'stock',
@@ -44,9 +44,15 @@ const COLUMN_ORDER = [
 ]
 
 export default function StockSheet({ data, columns: rawColumns, currentUser, onSaveCell, onDeleteCell, onSaveColumn, onDeleteColumn, syncing }) {
+  // Ordenar columnas según COLUMN_ORDER
   const columns = useMemo(() => {
+    if (!rawColumns || rawColumns.length === 0) return []
     const colMap = new Map(rawColumns.map(c => [c.key, c]))
-    return COLUMN_ORDER.map(key => colMap.get(key)).filter(Boolean)
+    const ordered = COLUMN_ORDER.map(key => colMap.get(key)).filter(Boolean)
+    // Si faltan columnas en COLUMN_ORDER, agregarlas al final
+    const orderedKeys = new Set(COLUMN_ORDER)
+    const remaining = rawColumns.filter(c => !orderedKeys.has(c.key))
+    return [...ordered, ...remaining]
   }, [rawColumns])
 
   const [selectedCell, setSelectedCell] = useState(null)
@@ -406,16 +412,23 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
     })
   }
 
-  // ===== CELL INPUT =====
+  // ===== CELL INPUT - FIX PRIMER CARACTER =====
   function CellInput({ col, rowIdx, initialValue, onFinish, onNavigate }) {
     const isDate = col.type === 'date'
+    // FIX: Si initialValue es un solo carácter (escribir para empezar), usarlo directo
     const [value, setValue] = useState(isDate ? formatDate(initialValue) : initialValue)
     const inputRef = useRef(null)
 
     useEffect(() => {
       if (inputRef.current) {
         inputRef.current.focus()
-        if (inputRef.current.select) inputRef.current.select()
+        // Si el valor es un solo carácter (acabamos de empezar a escribir), 
+        // poner el cursor al final en vez de seleccionar todo
+        if (initialValue.length === 1) {
+          inputRef.current.setSelectionRange(1, 1)
+        } else {
+          inputRef.current.select()
+        }
       }
     }, [])
 
