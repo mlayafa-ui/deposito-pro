@@ -197,54 +197,91 @@ body {
 }
 
 .grid-container {
-  flex: 1; overflow: auto; position: relative; background: #fff;
+  flex: 1;
+  overflow: auto;
+  position: relative;
+  background: #fff;
+  outline: none !important;
 }
 
 .grid-table {
-  border-collapse: collapse; table-layout: fixed;
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
 }
 
 .grid-table th, .grid-table td {
-  width: 140px; height: 36px;
-  border: 1px solid #e5e5e5; padding: 0;
-  text-align: center; vertical-align: middle;
-  font-size: 12.5px; position: relative;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  width: 140px;
+  height: 36px;
+  border: 1px solid #e5e5e5;
+  padding: 0;
+  text-align: center;
+  vertical-align: middle;
+  font-size: 12.5px;
+  position: relative;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .grid-table th {
-  background: #f8f9fa; font-weight: 600; color: #666;
-  position: sticky; top: 0; z-index: 2;
+  background: #f8f9fa;
+  font-weight: 600;
+  color: #666;
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 .grid-table th:first-child {
-  width: 50px; position: sticky; left: 0; z-index: 3;
+  width: 50px;
+  position: sticky;
+  left: 0;
+  z-index: 3;
   background: #f8f9fa;
 }
 
 .grid-table td:first-child {
-  width: 50px; background: #f8f9fa;
-  font-weight: 600; color: #888;
-  position: sticky; left: 0; z-index: 1;
+  width: 50px;
+  background: #f8f9fa;
+  font-weight: 600;
+  color: #888;
+  position: sticky;
+  left: 0;
+  z-index: 1;
 }
 
 .grid-table td {
-  background: #fff; cursor: cell;
-  transition: background 0.05s; padding: 0 6px;
+  background: #fff;
+  cursor: cell;
+  transition: background 0.05s;
+  padding: 0 6px;
 }
 .grid-table td:hover { background: #f5f5f5; }
 .grid-table td.selected {
-  outline: 2px solid #1a1a1a; outline-offset: -2px; z-index: 1;
+  outline: 2px solid #1a1a1a;
+  outline-offset: -2px;
+  z-index: 1;
 }
-.grid-table td.editing { padding: 0; }
-.grid-table td.editing input {
-  width: 100%; height: 100%; border: none; outline: none;
-  padding: 0 8px; font-size: 12.5px; font-family: inherit;
-  background: #fff; color: #1a1a1a;
-}
+.grid-table td.editing { padding: 0 !important; }
+.grid-table td.editing input,
 .grid-table td.editing select {
-  width: 100%; height: 100%; border: none; outline: none;
-  padding: 0 6px; font-size: 12px; background: #fff;
+  width: 100%;
+  height: 100%;
+  border: none;
+  outline: none;
+  padding: 0 8px;
+  font-size: 12.5px;
+  font-family: inherit;
+  background: #fff;
+  color: #1a1a1a;
+  margin: 0;
+  border-radius: 0;
 }
+.grid-table td.computed-cell { background: #fafafa; cursor: default; }
+.grid-table td.computed-cell span { color: #888; font-style: italic; }
+.grid-table td.pending-save { opacity: 0.7; }
+.pending-indicator { font-size: 10px; margin-left: 4px; animation: spin 1s linear infinite; display: inline-block; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 .col-delete {
   position: absolute; right: 4px; top: 50%;
@@ -565,62 +602,4 @@ body {
   .user-grid { grid-template-columns: 1fr; }
   .costos-filters { flex-direction: column; }
   .tarifas-grid { grid-template-columns: 1fr; }
-}
-@media (max-width: 768px) {
-  .main-area { flex-direction: column; }
-  .audit-panel { width: 100%; height: 250px; border-left: none; border-top: 1px solid #e5e5e5; }
-  .nav-tabs { overflow-x: auto; }
-  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
-  .tarifas-mini-grid { grid-template-columns: 1fr; }
-  .user-grid { grid-template-columns: 1fr; }
-  .costos-filters { flex-direction: column; }
-  .tarifas-grid { grid-template-columns: 1fr; }
-}
-
-/* ═══ STOCKSHEET EXCEL MODE - NUEVAS REGLAS ═══ */
-.grid-container:focus { outline: none !important; }
-.grid-table td.editing { padding: 0 !important; }
-.grid-table td.editing input,
-.grid-table td.editing select {
-  width: 100%; height: 100%; border: none; outline: none;
-  padding: 0 8px; font-size: 12.5px; font-family: inherit;
-  background: #fff; color: #1a1a1a; margin: 0; border-radius: 0;
-}
-.grid-table td.computed-cell { background: #fafafa; cursor: default; }
-.grid-table td.computed-cell span { color: #888; font-style: italic; }
-.grid-table td.pending-save { opacity: 0.7; }
-.pending-indicator { font-size: 10px; margin-left: 4px; animation: spin 1s linear infinite; display: inline-block; }
-@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-.tool-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.grid-table td:not(.computed-cell) { cursor: cell; }
-input[type="date"] { font-family: inherit; }
-@media (max-width: 768px) {
-  .main-area { flex-direction: column; }
-  .audit-panel { width: 100%; height: 250px; border-left: none; border-top: 1px solid #e5e5e5; }
-  .nav-tabs { overflow-x: auto; }
-  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
-  .tarifas-mini-grid { grid-template-columns: 1fr; }
-  .user-grid { grid-template-columns: 1fr; }
-  .costos-filters { flex-direction: column; }
-  .tarifas-grid { grid-template-columns: 1fr; }
-}
-
-/* ═══ VIRTUALIZACIÓN GRID ═══ */
-.grid-container {
-  flex: 1;
-  overflow: auto;
-  position: relative;
-  background: #fff;
-  outline: none !important;
-}
-
-.grid-table tbody {
-  position: relative;
-}
-
-.grid-table tbody tr {
-  position: absolute;
-  width: 100%;
-  display: table;
-  table-layout: fixed;
 }
