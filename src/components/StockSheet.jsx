@@ -3,6 +3,9 @@ import { PERMISSIONS } from '../utils/auth.js'
 import { CONTAINER_SIZES, TERMINALES, STOCK_COLUMNS } from '../utils/constants.js'
 
 const MAX_HISTORY = 50
+const ROW_HEIGHT = 36 // altura de cada fila en px
+const VISIBLE_ROWS = 25 // cuántas filas renderizar (buffer)
+const BUFFER_ROWS = 5 // filas extra arriba y abajo para scroll suave
 
 // ===== HELPERS DE FECHA =====
 function formatDate(isoDate) {
@@ -44,15 +47,15 @@ const COLUMN_ORDER = [
 ]
 
 export default function StockSheet({ data, columns: rawColumns, currentUser, onSaveCell, onDeleteCell, onSaveColumn, onDeleteColumn, syncing }) {
-  // ===== FORZAR USO DE STOCK_COLUMNS DE constants.js =====
+  // ===== FORZAR USO DE STOCK_COLUMNS =====
   const columns = useMemo(() => {
     const colMap = new Map(STOCK_COLUMNS.map(c => [c.key, c]))
-    const ordered = COLUMN_ORDER.map(key => colMap.get(key)).filter(Boolean)
-    return ordered
+    return COLUMN_ORDER.map(key => colMap.get(key)).filter(Boolean)
   }, [])
 
   const [selectedCell, setSelectedCell] = useState(null)
   const [editingCell, setEditingCell] = useState(null)
+  const [pendingChar, setPendingChar] = useState(null) // FIX: carácter pendiente
   const [clipboard, setClipboard] = useState('')
   const [rows, setRows] = useState(10000)
   const [showAddCol, setShowAddCol] = useState(false)
@@ -61,18 +64,22 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
   
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' })
   const [filters, setFilters] = useState({})
+  
+  // ===== VIRTUALIZACIÓN: scroll position =====
+  const [scrollTop, setScrollTop] = useState(0)
 
   const historyRef = useRef([])
   const historyIndexRef = useRef(-1)
   const pendingSaves = useRef(new Set())
   const gridRef = useRef(null)
+  const tbodyRef = useRef(null)
 
   const isAdmin = currentUser?.role === 'admin'
   const canEdit = PERMISSIONS.canEditStock(currentUser?.role)
 
   const getCellKey = (colKey, rowIdx) => `${colKey}_${rowIdx}`
 
-  // ===== COMPUTED DATA (con TEU auto-calculado) =====
+  // ===== COMPUTED DATA =====
   const computedData = useMemo(() => {
     const result = { ...data, ...localOverrides }
     for (let r = 1; r <= rows; r++) {
@@ -81,7 +88,6 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
       const factura = result[`factura_${r}`] || data[`factura_${r}`]
       const tamanio = result[`tamanio_${r}`] || data[`tamanio_${r}`]
 
-      // Auto-calcular TEU desde tamanio
       if (tamanio && CONTAINER_SIZES[tamanio]) {
         result[`teu_${r}`] = String(CONTAINER_SIZES[tamanio].teu)
       }
@@ -104,7 +110,7 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
     return result
   }, [data, rows, localOverrides])
 
-  // ===== FILTRAR Y ORDENAR FILAS =====
+  // ===== FILTRAR Y ORDENAR =====
   const visibleRows = useMemo(() => {
     let rowIndices = Array.from({ length: rows }, (_, i) => i + 1)
 
@@ -141,6 +147,20 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
 
     return [...withData, ...empty]
   }, [rows, filters, sortConfig, computedData, columns])
+
+  // ===== VIRTUALIZACIÓN: calcular rango visible =====
+  const virtualData = useMemo(() => {
+    const startIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_ROWS)
+    const endIdx = Math.min(visibleRows.length - 1, Math.ceil((scrollTop + (VISIBLE_ROWS * ROW_HEIGHT)) / ROW_HEIGHT) + BUFFER_ROWS)
+    
+    return {
+      startIdx,
+      endIdx,
+      offsetY: startIdx * ROW_HEIGHT,
+      visible: visibleRows.slice(startIdx, endIdx + 1),
+      totalHeight: visibleRows.length * ROW_HEIGHT
+    }
+  }, [visibleRows, scrollTop])
 
   const getCellValue = useCallback((colKey, rowIdx) => {
     return computedData[getCellKey(colKey, rowIdx)] || ''
@@ -228,7 +248,6 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
       try {
         await onSaveCell(cellKey, finalValue, currentUser)
         
-        // Auto-calcular TEU si cambia tamanio
         if (colKey === 'tamanio' && CONTAINER_SIZES[finalValue]) {
           const teuKey = getCellKey('teu', rowIdx)
           const teuValue = String(CONTAINER_SIZES[finalValue].teu)
@@ -236,7 +255,6 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
           await onSaveCell(teuKey, teuValue, currentUser)
         }
         
-        // Auto-calcular fecha_factura si cambia factura
         if (colKey === 'factura' && finalValue && !data[`fecha_factura_${rowIdx}`]) {
           const fechaKey = getCellKey('fecha_factura', rowIdx)
           const fechaValue = todayISO()
@@ -255,6 +273,7 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
       }
     }
     setEditingCell(null)
+    setPendingChar(null)
   }, [data, currentUser, onSaveCell, pushHistory, columns])
 
   const copyCell = useCallback(() => {
@@ -309,6 +328,7 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
       if (e.key === 'Escape') {
         e.preventDefault()
         setEditingCell(null)
+        setPendingChar(null)
       }
       return
     }
@@ -343,11 +363,18 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
       default:
         if (isLetterOrNumber && isEditable(selectedCell.col, selectedCell.row)) {
           e.preventDefault()
+          // FIX: Guardar el carácter para pasarlo al input
+          setPendingChar(e.key)
           startEdit(selectedCell.col, selectedCell.row, e.key)
         }
         break
     }
   }, [editingCell, selectedCell, moveSelection, startEdit, isEditable, getCellValue, copyCell, cutCell, pasteCell, undo, redo])
+
+  // ===== SCROLL HANDLER =====
+  const handleScroll = useCallback((e) => {
+    setScrollTop(e.target.scrollTop)
+  }, [])
 
   useEffect(() => {
     if (!editingCell && gridRef.current) {
@@ -408,22 +435,31 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
     })
   }
 
-  // ===== CELL INPUT =====
-  function CellInput({ col, rowIdx, initialValue, onFinish, onNavigate }) {
+  // ===== CELL INPUT CON FIX DE PRIMER CARÁCTER =====
+  function CellInput({ col, rowIdx, initialValue, pendingChar, onFinish, onNavigate }) {
     const isDate = col.type === 'date'
-    const [value, setValue] = useState(isDate ? formatDate(initialValue) : initialValue)
+    const [value, setValue] = useState(() => {
+      const base = isDate ? formatDate(initialValue) : initialValue
+      return base
+    })
     const inputRef = useRef(null)
+    const hasInsertedPending = useRef(false)
 
     useEffect(() => {
       if (inputRef.current) {
         inputRef.current.focus()
-        if (initialValue.length === 1) {
+        // FIX: Si hay un pendingChar (el usuario acaba de empezar a escribir),
+        // insertarlo manualmente después del foco
+        if (pendingChar && !hasInsertedPending.current) {
+          hasInsertedPending.current = true
+          inputRef.current.value = pendingChar
+          setValue(pendingChar)
           inputRef.current.setSelectionRange(1, 1)
         } else {
           inputRef.current.select()
         }
       }
-    }, [])
+    }, [pendingChar])
 
     const handleChange = (e) => {
       setValue(e.target.value)
@@ -488,7 +524,7 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
         <input className="formula-input" value={selectedCell ? getCellValue(selectedCell.col, selectedCell.row) : ''} readOnly placeholder="Valor de celda..." />
       </div>
 
-      <div className="grid-container" ref={gridRef} tabIndex={0} onKeyDown={handleGridKeyDown}>
+      <div className="grid-container" ref={gridRef} tabIndex={0} onKeyDown={handleGridKeyDown} onScroll={handleScroll}>
         <table className="grid-table">
           <thead>
             <tr>
@@ -527,10 +563,13 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
               {isAdmin && <th style={{ minWidth: '50px', cursor: 'pointer' }} onClick={() => setShowAddCol(true)}><span style={{ fontSize: '18px', color: '#999' }}>+</span></th>}
             </tr>
           </thead>
-          <tbody>
-            {visibleRows.map(r => (
-              <tr key={r}>
-                <td style={{ textAlign: 'center', fontWeight: 600, color: '#888', userSelect: 'none' }}>
+          <tbody ref={tbodyRef} style={{ position: 'relative', height: `${virtualData.totalHeight}px` }}>
+            <tr style={{ height: `${virtualData.offsetY}px`, visibility: 'hidden' }}>
+              <td colSpan={columns.length + 2}></td>
+            </tr>
+            {virtualData.visible.map(r => (
+              <tr key={r} style={{ height: `${ROW_HEIGHT}px` }}>
+                <td style={{ textAlign: 'center', fontWeight: 600, color: '#888', userSelect: 'none', height: `${ROW_HEIGHT}px` }}>
                   {r}
                   {canEdit && <span className="row-delete" onClick={() => deleteRow(r)} title="Eliminar fila">×</span>}
                 </td>
@@ -544,17 +583,19 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
                   const isPending = pendingSaves.current.has(key)
 
                   return (
-                    <td key={key} className={`${isSelected ? 'selected' : ''} ${isComputed ? 'computed-cell' : ''} ${isEditing ? 'editing' : ''} ${isPending ? 'pending-save' : ''}`} onClick={() => { setEditingCell(null); setSelectedCell({ col: col.key, row: r }) }}>
+                    <td key={key} className={`${isSelected ? 'selected' : ''} ${isComputed ? 'computed-cell' : ''} ${isEditing ? 'editing' : ''} ${isPending ? 'pending-save' : ''}`} style={{ height: `${ROW_HEIGHT}px` }} onClick={() => { setEditingCell(null); setSelectedCell({ col: col.key, row: r }) }}>
                       {isEditing ? (
                         <CellInput
                           col={col}
                           rowIdx={r}
                           initialValue={rawVal}
+                          pendingChar={pendingChar}
                           onFinish={(value) => {
                             if (value !== null) {
                               finishEdit(col.key, r, value)
                             } else {
                               setEditingCell(null)
+                              setPendingChar(null)
                             }
                           }}
                           onNavigate={(direction) => {
@@ -570,7 +611,7 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
                     </td>
                   )
                 })}
-                {isAdmin && <td></td>}
+                {isAdmin && <td style={{ height: `${ROW_HEIGHT}px` }}></td>}
               </tr>
             ))}
           </tbody>
