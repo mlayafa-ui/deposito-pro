@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { PERMISSIONS } from '../utils/auth.js'
-import { TERMINALES } from '../utils/constants.js'
+import { CONTAINER_SIZES, TERMINALES } from '../utils/constants.js'
 
 const MAX_HISTORY = 50
 
@@ -29,6 +29,7 @@ const COLUMN_ORDER = [
   'stock',
   'ingreso',
   'salida',
+  'tamanio',
   'teu',
   'dias',
   'ubicacion',
@@ -42,28 +43,9 @@ const COLUMN_ORDER = [
   'fecha_factura',
 ]
 
-// ===== CONFIGURACIÓN DE COLUMNAS =====
-const DEFAULT_COLUMNS_CONFIG = [
-  { key: 'contenedor', label: 'Contenedor', type: 'text', editable: true },
-  { key: 'stock', label: 'Stock', type: 'number', editable: true },
-  { key: 'ingreso', label: 'Fecha In', type: 'date', editable: true },
-  { key: 'salida', label: 'Fecha Out', type: 'date', editable: true },
-  { key: 'teu', label: 'TEU', type: 'number', editable: true },
-  { key: 'dias', label: 'Días', type: 'text', computed: true, editable: false },
-  { key: 'ubicacion', label: 'Ubicación', type: 'text', editable: true },
-  { key: 'estado', label: 'Estado', type: 'text', computed: true, editable: false },
-  { key: 'ms', label: 'MS', type: 'text', editable: true },
-  { key: 'observaciones', label: 'Observaciones', type: 'text', editable: true },
-  { key: 'terminal', label: 'Terminal', type: 'text', editable: true },
-  { key: 'habilitacion', label: 'Habilitación', type: 'text', editable: true },
-  { key: 'valor_mercaderia', label: 'Valor Mercadería', type: 'number', editable: true },
-  { key: 'factura', label: 'Factura', type: 'number', editable: true },
-  { key: 'fecha_factura', label: 'Fecha Factura', type: 'date', computed: true, editable: false },
-]
-
 export default function StockSheet({ data, columns: rawColumns, currentUser, onSaveCell, onDeleteCell, onSaveColumn, onDeleteColumn, syncing }) {
   const columns = useMemo(() => {
-    const colMap = new Map((rawColumns || DEFAULT_COLUMNS_CONFIG).map(c => [c.key, c]))
+    const colMap = new Map(rawColumns.map(c => [c.key, c]))
     return COLUMN_ORDER.map(key => colMap.get(key)).filter(Boolean)
   }, [rawColumns])
 
@@ -88,13 +70,19 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
 
   const getCellKey = (colKey, rowIdx) => `${colKey}_${rowIdx}`
 
-  // ===== COMPUTED DATA =====
+  // ===== COMPUTED DATA (con TEU auto-calculado) =====
   const computedData = useMemo(() => {
     const result = { ...data, ...localOverrides }
     for (let r = 1; r <= rows; r++) {
       const ingreso = result[`ingreso_${r}`] || data[`ingreso_${r}`]
       const salida = result[`salida_${r}`] || data[`salida_${r}`]
       const factura = result[`factura_${r}`] || data[`factura_${r}`]
+      const tamanio = result[`tamanio_${r}`] || data[`tamanio_${r}`]
+
+      // Auto-calcular TEU desde tamanio
+      if (tamanio && CONTAINER_SIZES[tamanio]) {
+        result[`teu_${r}`] = String(CONTAINER_SIZES[tamanio].teu)
+      }
 
       if (ingreso) {
         const ing = new Date(ingreso)
@@ -238,6 +226,15 @@ export default function StockSheet({ data, columns: rawColumns, currentUser, onS
       try {
         await onSaveCell(cellKey, finalValue, currentUser)
         
+        // Auto-calcular TEU si cambia tamanio
+        if (colKey === 'tamanio' && CONTAINER_SIZES[finalValue]) {
+          const teuKey = getCellKey('teu', rowIdx)
+          const teuValue = String(CONTAINER_SIZES[finalValue].teu)
+          setLocalOverrides(prev => ({ ...prev, [teuKey]: teuValue }))
+          await onSaveCell(teuKey, teuValue, currentUser)
+        }
+        
+        // Auto-calcular fecha_factura si cambia factura
         if (colKey === 'factura' && finalValue && !data[`fecha_factura_${rowIdx}`]) {
           const fechaKey = getCellKey('fecha_factura', rowIdx)
           const fechaValue = todayISO()
